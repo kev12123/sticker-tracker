@@ -45,17 +45,17 @@ def _ocr_claude(image: Image.Image) -> list[str]:
     """
     import anthropic
 
-    # Crop to just the badge area — far less data to send
-    badge = _crop_badge(image)
-    # Resize badge to at most 600px wide — plenty for Claude to read text
-    bw, bh = badge.size
-    if bw > 600:
-        badge = badge.resize((600, int(bh * 600 / bw)), Image.LANCZOS)
+    # Resize to max 1000px on longest side before sending — Claude reads it fine at this size
+    w, h = image.size
+    max_dim = max(w, h)
+    if max_dim > 1000:
+        scale = 1000 / max_dim
+        image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
     buf = BytesIO()
-    badge.save(buf, format="JPEG", quality=80)
+    image.save(buf, format="JPEG", quality=80)
     b64 = base64.standard_b64encode(buf.getvalue()).decode()
-    print(f"[SCAN] badge crop {badge.size}, {len(buf.getvalue())} bytes → Claude")
+    print(f"[SCAN] sending {image.size}, {len(buf.getvalue())} bytes → Claude")
 
     client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
     msg = client.messages.create(
