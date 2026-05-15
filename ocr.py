@@ -1,8 +1,12 @@
 """
 OCR pipeline for Panini sticker back scanning.
 Extracts sticker codes (e.g. 'ARG 17') from photos of sticker backs.
+
+Primary: Claude vision API (fast, accurate)
+Fallback: Tesseract (when ANTHROPIC_API_KEY is not set)
 """
 
+import base64
 import re
 import sqlite3
 from io import BytesIO
@@ -12,6 +16,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 import os as _os
 DB_PATH = _os.getenv("DB_PATH", "stickers.db")
+_ANTHROPIC_KEY = _os.getenv("ANTHROPIC_API_KEY", "")
 
 _CODE_SET: set[str] = set()
 _CODE_LIST: list[str] = []
@@ -30,6 +35,54 @@ def _load_codes():
     _CODE_SET = {r[0] for r in rows}
     _CODE_LIST = sorted(_CODE_SET)
 
+
+# ─── Claude vision OCR ───────────────────────────────────────────────────────
+
+def _ocr_claude(image: Image.Image) -> list[str]:
+    """
+    Use Claude vision to extract the sticker code from the badge.
+    Returns a list of candidate code strings (usually just one).
+    """
+    import anthropic
+
+    buf = BytesIO()
+    image.save(buf, format="JPEG", quality=85)
+    b64 = base64.standard_b64encode(buf.getvalue()).decode()
+
+    client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=64,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/jpeg", "data": b64},
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "This is the back of a Panini FIFA World Cup 2026 sticker. "
+                        "There is a dark rounded badge in the top-right corner containing "
+                        "the sticker code (country letters + number, e.g. 'ARG 17' or 'RSA 6'). "
+                        "Reply with ONLY the sticker code, nothing else. "
+                        "If you cannot read it clearly, reply with UNKNOWN."
+                    ),
+                },
+            ],
+        }],
+    )
+
+    raw = msg.content[0].text.strip().upper()
+    if raw == "UNKNOWN" or not raw:
+        return []
+
+    # Parse whatever Claude returned
+    return _parse_candidates(raw) or ([raw] if re.match(r'^[A-Z]{2,3} \d{1,2}$', raw) else [])
+
+
+# ─── Tesseract fallback OCR ───────────────────────────────────────────────────
 
 def _otsu_threshold(img: Image.Image) -> int:
     hist = img.histogram()
@@ -53,25 +106,6 @@ def _otsu_threshold(img: Image.Image) -> int:
     return threshold
 
 
-def _preprocess(image: Image.Image) -> tuple[Image.Image, Image.Image]:
-    """Return (normal, inverted) binarized images ready for Tesseract."""
-    img = image.convert("L")
-    w, h = img.size
-
-    if w < 2400:
-        scale = 2400 / w
-        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-    img = ImageEnhance.Sharpness(img).enhance(2.0)
-    img = img.filter(ImageFilter.SHARPEN)
-
-    threshold = _otsu_threshold(img)
-    binary = img.point(lambda x: 255 if x >= threshold else 0)
-    inverted = ImageOps.invert(binary)
-
-    return binary, inverted
-
-
 def _crop_badge(image: Image.Image) -> Image.Image:
     """Crop to the sticker code badge in the top-right corner."""
     w, h = image.size
@@ -81,11 +115,7 @@ def _crop_badge(image: Image.Image) -> Image.Image:
         return image.crop((int(w * 0.65), 0, w, int(h * 0.35)))
 
 
-def _ocr_badge(image: Image.Image) -> str:
-    """
-    Dedicated OCR on the badge crop (top-right corner, dark bg / white text).
-    Inverts before OCR so Tesseract gets black text on white background.
-    """
+def _ocr_badge_tesseract(image: Image.Image) -> str:
     badge = _crop_badge(image)
     bw, bh = badge.size
     scale = max(1.0, 1200 / bw)
@@ -94,27 +124,31 @@ def _ocr_badge(image: Image.Image) -> str:
     gray = badge.convert("L")
     threshold = _otsu_threshold(gray)
     binary = gray.point(lambda x: 255 if x >= threshold else 0)
-    # Badge: dark bg + white text → invert → white bg + black text for Tesseract
     inverted = ImageOps.invert(binary)
 
     whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '
     parts = []
-    # PSM 11 (sparse text) on gray: best for badge with dark bg / white text
     for img_var in (gray, inverted):
         cfg = f'--psm 11 -c tessedit_char_whitelist="{whitelist}"'
         parts.append(pytesseract.image_to_string(img_var, config=cfg))
-    # PSM 7 (single line) on inverted: backup when badge is cleanly isolated
     cfg7 = f'--psm 7 -c tessedit_char_whitelist="{whitelist}"'
     parts.append(pytesseract.image_to_string(inverted, config=cfg7))
     return '\n'.join(parts)
 
 
-def _ocr_raw(image: Image.Image) -> str:
-    binary, inverted = _preprocess(image)
+def _ocr_full_tesseract(image: Image.Image) -> str:
+    img = image.convert("L")
+    w, h = img.size
+    if w < 2400:
+        scale = 2400 / w
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    img = ImageEnhance.Sharpness(img).enhance(2.0)
+    img = img.filter(ImageFilter.SHARPEN)
+    threshold = _otsu_threshold(img)
+    binary = img.point(lambda x: 255 if x >= threshold else 0)
+    inverted = ImageOps.invert(binary)
+
     parts = []
-    # PSM 11 = sparse text (finds text anywhere, no layout assumption) — best for sticker backs
-    # PSM 6  = uniform block — fallback
-    # PSM 7  = single text line — good when code is isolated
     for psm in (11, 6, 7):
         cfg = f'--psm {psm} -c tessedit_char_whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "'
         parts.append(pytesseract.image_to_string(binary, config=cfg))
@@ -122,8 +156,9 @@ def _ocr_raw(image: Image.Image) -> str:
     return '\n'.join(parts)
 
 
+# ─── Candidate parsing ────────────────────────────────────────────────────────
+
 def _parse_candidates(raw: str) -> list[str]:
-    # Collapse spaces between consecutive digits ("1 7" → "17")
     normalized = raw
     prev = None
     while prev != normalized:
@@ -138,18 +173,18 @@ def _parse_candidates(raw: str) -> list[str]:
             seen.add(code)
             codes.append(code)
 
-    # Standard: PREFIX + digits (e.g. "RSA 6", "MEX 17")
     for c, n in re.findall(r'\b([A-Z]{2,3})\s*(\d{1,2})\b', normalized):
         _add(f"{c} {n}")
 
-    # Also catch letter-as-single-digit in the number slot
-    # e.g. "RSAG" or "RSA G" → "RSA 6"  (bold font makes 6 look like G)
+    # Catch letter-as-single-digit (e.g. "RSAG" → "RSA 6" when bold font confuses Tesseract)
     for c, letter in re.findall(r'\b([A-Z]{2,3})\s*([GOBIZ])\b', normalized):
         if letter in _LETTER_AS_DIGIT:
             _add(f"{c} {_LETTER_AS_DIGIT[letter]}")
 
     return codes
 
+
+# ─── Fuzzy correction ─────────────────────────────────────────────────────────
 
 def _fuzzy_correct(code: str) -> str | None:
     _load_codes()
@@ -195,27 +230,32 @@ def lookup_sticker(code: str) -> dict | None:
     return dict(row) if row else None
 
 
+# ─── Main entry point ─────────────────────────────────────────────────────────
+
 def scan_image(image_bytes: bytes) -> dict:
     _load_codes()
     image = Image.open(BytesIO(image_bytes))
 
-    # Primary: dedicated badge crop (where the code always lives)
-    badge_raw = _ocr_badge(image)
-    badge_candidates = _parse_candidates(badge_raw)
-
-    # Fallback: full-image OCR
-    full_raw = _ocr_raw(image)
-    full_candidates = _parse_candidates(full_raw)
-
-    # Merge badge-first, deduplicated
-    seen: set[str] = set()
     detected: list[str] = []
-    for code in badge_candidates + full_candidates:
-        if code not in seen:
-            seen.add(code)
-            detected.append(code)
 
-    raw_combined = f"{badge_raw}\n{full_raw}"
+    if _ANTHROPIC_KEY:
+        # Primary: Claude vision — fast and accurate
+        try:
+            detected = _ocr_claude(image)
+        except Exception as e:
+            print(f"[SCAN] Claude vision error: {e}, falling back to Tesseract")
+
+    if not detected:
+        # Fallback: Tesseract with badge crop
+        badge_raw = _ocr_badge_tesseract(image)
+        badge_candidates = _parse_candidates(badge_raw)
+        full_raw = _ocr_full_tesseract(image)
+        full_candidates = _parse_candidates(full_raw)
+        seen: set[str] = set()
+        for code in badge_candidates + full_candidates:
+            if code not in seen:
+                seen.add(code)
+                detected.append(code)
 
     matches = []
     for code in detected:
@@ -226,8 +266,8 @@ def scan_image(image_bytes: bytes) -> dict:
                 matches.append(sticker)
 
     if len(matches) == 1:
-        return {"status": "match", "raw_ocr": raw_combined.strip(), "detected_codes": detected, "match": matches[0], "candidates": matches}
+        return {"status": "match", "detected_codes": detected, "match": matches[0], "candidates": matches}
     elif len(matches) > 1:
-        return {"status": "candidates", "raw_ocr": raw_combined.strip(), "detected_codes": detected, "match": None, "candidates": matches}
+        return {"status": "candidates", "detected_codes": detected, "match": None, "candidates": matches}
     else:
-        return {"status": "no_match", "raw_ocr": raw_combined.strip(), "detected_codes": detected, "match": None, "candidates": []}
+        return {"status": "no_match", "detected_codes": detected, "match": None, "candidates": []}
