@@ -9,7 +9,8 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Prevent iOS Safari from zooming in when tapping inputs */
+/* Prevent iOS Safari from zooming in when tapping inputs.
+   Tailwind's text-sm (14px) triggers auto-zoom; !important beats the utility class. */
 input, select, textarea {
-  font-size: max(16px, 1em);
+  font-size: max(16px, 1em) !important;
 }
