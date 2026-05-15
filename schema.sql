@@ -1,7 +1,19 @@
 -- Panini World Cup 2026 Sticker Tracker
--- Run AFTER stickers.db already contains the stickers table from scraper.py
 
 PRAGMA foreign_keys = ON;
+
+-- ─── Sticker Catalogue ───────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS stickers (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    sticker_code  TEXT NOT NULL UNIQUE,
+    team_slug     TEXT NOT NULL,
+    team_name     TEXT NOT NULL,
+    sticker_num   INTEGER NOT NULL,
+    player_name   TEXT,
+    sticker_type  TEXT NOT NULL CHECK(sticker_type IN ('Player', 'FOIL', 'Team Photo', 'Special')),
+    club          TEXT
+);
 
 -- ─── Users ───────────────────────────────────────────────────────────────────
 
