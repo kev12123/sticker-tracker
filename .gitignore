@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+stickers.db
+client/node_modules/
+client/dist/
+.env
+*.log
