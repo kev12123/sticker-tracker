@@ -61,7 +61,7 @@ function StickerCard({ entry, onUpdate, onRemove }) {
 
 const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-export default function StickerList() {
+export default function StickerList({ refreshToken = 0 }) {
   const [list, setList] = useState([])
   const [allStickers, setAllStickers] = useState([])
   const [search, setSearch] = useState('')
@@ -72,16 +72,18 @@ export default function StickerList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Load sticker catalogue once
   useEffect(() => {
-    Promise.all([
-      api.get('/stickers/list'),
-      api.get('/stickers'),
-    ]).then(([listRes, allRes]) => {
-      setList(listRes.data)
-      setAllStickers(allRes.data)
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    api.get('/stickers').then(res => setAllStickers(res.data)).catch(() => {})
   }, [])
+
+  // Re-fetch user's list whenever refreshToken changes (e.g. after scanner adds a sticker)
+  useEffect(() => {
+    setLoading(true)
+    api.get('/stickers/list')
+      .then(res => { setList(res.data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [refreshToken])
 
   // Search stickers to add
   useEffect(() => {

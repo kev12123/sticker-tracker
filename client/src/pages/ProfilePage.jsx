@@ -81,7 +81,7 @@ export default function ProfilePage() {
 
         {/* Tab Content */}
         <div className="bg-white shadow-sm rounded-b-xl min-h-96">
-          {tab === 'stickers' && <StickerList />}
+          {tab === 'stickers' && <StickerList refreshToken={scanKey} />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
         </div>
