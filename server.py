@@ -453,7 +453,7 @@ async def scan_sticker(
         result = scan_image(raw_bytes)
     except Exception as e:
         raise HTTPException(500, f"OCR error: {e}")
-    print(f"[SCAN] status={result['status']} detected={result['detected_codes']} raw_ocr={repr(result['raw_ocr'][:300])}")
+    print(f"[SCAN] status={result['status']} detected={result['detected_codes']}")
     return result
 
 
