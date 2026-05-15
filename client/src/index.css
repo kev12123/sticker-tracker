@@ -8,3 +8,8 @@ body {
   /* Respect iPhone notch / home indicator */
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Prevent iOS Safari from zooming in when tapping inputs */
+input, select, textarea {
+  font-size: max(16px, 1em);
+}
