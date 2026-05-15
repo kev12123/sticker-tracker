@@ -115,6 +115,17 @@ class RespondFriendBody(BaseModel):
 class SwapStatusBody(BaseModel):
     status: str  # accepted | rejected | cancelled
 
+class WantedBody(BaseModel):
+    sticker_id: int
+
+class SwapItem(BaseModel):
+    offered_sticker_id: int   # my duplicate I give
+    wanted_sticker_id: int    # their duplicate I want
+
+class SwapCreateBody(BaseModel):
+    receiver_id: int
+    items: list[SwapItem]     # one or more sticker pairs
+
 
 # ── Auth routes ───────────────────────────────────────────────────────────────
 
@@ -351,6 +362,58 @@ def respond_friend_request(friendship_id: int, body: RespondFriendBody, me=Depen
     return {"ok": True}
 
 
+# ── Wanted / Wishlist ─────────────────────────────────────────────────────────
+
+WANTED_QUERY = """
+    SELECT uw.id, s.id as sticker_id, s.sticker_code, s.team_name,
+           s.player_name, s.sticker_type, s.club
+    FROM user_wanted_stickers uw
+    JOIN stickers s ON s.id = uw.sticker_id
+    WHERE uw.user_id = ?
+    ORDER BY s.team_name, s.sticker_num
+"""
+
+def _wanted_entry(r):
+    return {
+        "id": r["id"],
+        "sticker": {
+            "id": r["sticker_id"], "sticker_code": r["sticker_code"],
+            "team_name": r["team_name"], "player_name": r["player_name"],
+            "sticker_type": r["sticker_type"], "club": r["club"],
+        },
+    }
+
+@app.get("/api/stickers/wanted")
+def get_wanted(me=Depends(get_current_user)):
+    with get_db() as db:
+        rows = db.execute(WANTED_QUERY, (me["id"],)).fetchall()
+    return [_wanted_entry(r) for r in rows]
+
+@app.post("/api/stickers/wanted", status_code=201)
+def add_wanted(body: WantedBody, me=Depends(get_current_user)):
+    with get_db() as db:
+        if not db.execute("SELECT 1 FROM stickers WHERE id=?", (body.sticker_id,)).fetchone():
+            raise HTTPException(404, "Sticker not found")
+        try:
+            cur = db.execute(
+                "INSERT INTO user_wanted_stickers (user_id, sticker_id) VALUES (?,?)",
+                (me["id"], body.sticker_id),
+            )
+            row = db.execute(WANTED_QUERY + " AND uw.id=?", (me["id"], cur.lastrowid)).fetchone()
+        except Exception:
+            raise HTTPException(409, "Already in wanted list")
+    return _wanted_entry(row)
+
+@app.delete("/api/stickers/wanted/{entry_id}", status_code=204)
+def remove_wanted(entry_id: int, me=Depends(get_current_user)):
+    with get_db() as db:
+        if not db.execute(
+            "SELECT 1 FROM user_wanted_stickers WHERE id=? AND user_id=?", (entry_id, me["id"])
+        ).fetchone():
+            raise HTTPException(404, "Entry not found")
+        db.execute("DELETE FROM user_wanted_stickers WHERE id=?", (entry_id,))
+
+
 @app.get("/api/friends/{friend_id}/stickers")
 def get_friend_stickers(friend_id: int, me=Depends(get_current_user)):
     with get_db() as db:
@@ -362,28 +425,41 @@ def get_friend_stickers(friend_id: int, me=Depends(get_current_user)):
         if not is_friend:
             raise HTTPException(403, "Not friends with this user")
         rows = db.execute(LIST_QUERY, (friend_id,)).fetchall()
-    return [_sticker_entry(r) for r in rows]
+        # Which of their stickers am I currently wanting?
+        wanted_ids = {r[0] for r in db.execute(
+            "SELECT sticker_id FROM user_wanted_stickers WHERE user_id=?", (me["id"],)
+        ).fetchall()}
+    entries = [_sticker_entry(r) for r in rows]
+    for e in entries:
+        e["i_want"] = e["sticker"]["id"] in wanted_ids
+    return entries
 
 
 # ── Swaps ─────────────────────────────────────────────────────────────────────
 
 SWAP_QUERY = """
-    SELECT sr.*,
+    SELECT sr.id, sr.offerer_id, sr.receiver_id, sr.status, sr.created_at,
            o.id as o_id, o.username as o_username,
-           r.id as r_id, r.username as r_username,
-           os.sticker_code as os_code, os.player_name as os_player, os.team_name as os_team,
-           ws.sticker_code as ws_code, ws.player_name as ws_player, ws.team_name as ws_team
+           r.id as r_id, r.username as r_username
     FROM swap_requests sr
     JOIN users o ON o.id = sr.offerer_id
     JOIN users r ON r.id = sr.receiver_id
-    JOIN stickers os ON os.id = sr.offered_sticker_id
-    JOIN stickers ws ON ws.id = sr.wanted_sticker_id
     WHERE sr.offerer_id=? OR sr.receiver_id=?
     ORDER BY sr.created_at DESC
 """
 
+SWAP_ITEMS_QUERY = """
+    SELECT si.id, si.swap_id,
+           os.id as os_id, os.sticker_code as os_code, os.player_name as os_player, os.team_name as os_team,
+           ws.id as ws_id, ws.sticker_code as ws_code, ws.player_name as ws_player, ws.team_name as ws_team
+    FROM swap_items si
+    JOIN stickers os ON os.id = si.offered_sticker_id
+    JOIN stickers ws ON ws.id = si.wanted_sticker_id
+    WHERE si.swap_id = ?
+"""
 
-def _format_swap(r):
+
+def _format_swap(r, items):
     return {
         "id": r["id"],
         "status": r["status"],
@@ -392,8 +468,14 @@ def _format_swap(r):
         "receiver_id": r["receiver_id"],
         "offerer": {"id": r["o_id"], "username": r["o_username"]},
         "receiver": {"id": r["r_id"], "username": r["r_username"]},
-        "offered_sticker": {"sticker_code": r["os_code"], "player_name": r["os_player"], "team_name": r["os_team"]},
-        "wanted_sticker":  {"sticker_code": r["ws_code"], "player_name": r["ws_player"], "team_name": r["ws_team"]},
+        "items": [
+            {
+                "id": i["id"],
+                "offered_sticker": {"id": i["os_id"], "sticker_code": i["os_code"], "player_name": i["os_player"], "team_name": i["os_team"]},
+                "wanted_sticker":  {"id": i["ws_id"], "sticker_code": i["ws_code"], "player_name": i["ws_player"], "team_name": i["ws_team"]},
+            }
+            for i in items
+        ],
     }
 
 
@@ -401,7 +483,57 @@ def _format_swap(r):
 def get_swaps(me=Depends(get_current_user)):
     with get_db() as db:
         rows = db.execute(SWAP_QUERY, (me["id"], me["id"])).fetchall()
-    return [_format_swap(r) for r in rows]
+        result = []
+        for r in rows:
+            items = db.execute(SWAP_ITEMS_QUERY, (r["id"],)).fetchall()
+            result.append(_format_swap(r, items))
+    return result
+
+
+@app.post("/api/swaps", status_code=201)
+def create_swap(body: SwapCreateBody, me=Depends(get_current_user)):
+    if not body.items:
+        raise HTTPException(400, "At least one swap item required")
+    if body.receiver_id == me["id"]:
+        raise HTTPException(400, "Cannot swap with yourself")
+    with get_db() as db:
+        # Must be friends
+        is_friend = db.execute("""
+            SELECT 1 FROM friendships
+            WHERE ((requester_id=? AND receiver_id=?) OR (requester_id=? AND receiver_id=?))
+              AND status='accepted'
+        """, (me["id"], body.receiver_id, body.receiver_id, me["id"])).fetchone()
+        if not is_friend:
+            raise HTTPException(403, "Not friends with this user")
+
+        # Validate each item
+        for item in body.items:
+            if not db.execute(
+                "SELECT 1 FROM user_stickers WHERE user_id=? AND sticker_id=?",
+                (me["id"], item.offered_sticker_id)
+            ).fetchone():
+                raise HTTPException(400, f"You don't have sticker {item.offered_sticker_id} as a duplicate")
+            if not db.execute(
+                "SELECT 1 FROM user_stickers WHERE user_id=? AND sticker_id=?",
+                (body.receiver_id, item.wanted_sticker_id)
+            ).fetchone():
+                raise HTTPException(400, f"Friend doesn't have sticker {item.wanted_sticker_id} as a duplicate")
+
+        cur = db.execute(
+            "INSERT INTO swap_requests (offerer_id, receiver_id) VALUES (?,?)",
+            (me["id"], body.receiver_id),
+        )
+        swap_id = cur.lastrowid
+        for item in body.items:
+            db.execute(
+                "INSERT INTO swap_items (swap_id, offered_sticker_id, wanted_sticker_id) VALUES (?,?,?)",
+                (swap_id, item.offered_sticker_id, item.wanted_sticker_id),
+            )
+        row = db.execute(SWAP_QUERY.replace(
+            "WHERE sr.offerer_id=? OR sr.receiver_id=?", "WHERE sr.id=?"
+        ), (swap_id,)).fetchone()
+        items = db.execute(SWAP_ITEMS_QUERY, (swap_id,)).fetchall()
+    return _format_swap(row, items)
 
 
 @app.patch("/api/swaps/{swap_id}")

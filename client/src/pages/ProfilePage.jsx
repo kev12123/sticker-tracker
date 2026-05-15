@@ -4,9 +4,11 @@ import StickerList from '../components/StickerList'
 import FriendsList from '../components/FriendsList'
 import SwapRequests from '../components/SwapRequests'
 import StickerScanner from '../components/StickerScanner'
+import WantedList from '../components/WantedList'
 
 const TABS = [
   { id: 'stickers', icon: '🃏', label: 'Duplicates' },
+  { id: 'wanted',   icon: '🎯', label: 'Wanted' },
   { id: 'friends',  icon: '👥', label: 'Friends' },
   { id: 'swaps',    icon: '🔄', label: 'Swaps' },
 ]
@@ -82,6 +84,7 @@ export default function ProfilePage() {
         {/* Tab Content */}
         <div className="bg-white shadow-sm rounded-b-xl min-h-96">
           {tab === 'stickers' && <StickerList refreshToken={scanKey} />}
+          {tab === 'wanted'   && <WantedList />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
         </div>
