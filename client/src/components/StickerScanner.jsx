@@ -105,9 +105,13 @@ export default function StickerScanner({ onAdded }) {
     const canvas = canvasRef.current
     if (!video || !canvas) return
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d').drawImage(video, 0, 0)
+    // Resize to max 1200px wide before upload — enough for Claude to read the badge
+    const MAX_W = 1200
+    const vw = video.videoWidth, vh = video.videoHeight
+    const scale = vw > MAX_W ? MAX_W / vw : 1
+    canvas.width = Math.round(vw * scale)
+    canvas.height = Math.round(vh * scale)
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
 
     setState(STATES.PROCESSING)
     stopCamera()
@@ -339,9 +343,7 @@ export default function StickerScanner({ onAdded }) {
           <div className="text-5xl mb-3">🔍</div>
           <p className="font-semibold text-gray-700">No sticker code found</p>
           <p className="text-sm text-gray-400 mt-1 mb-4">
-            {result?.raw_ocr
-              ? <>OCR read: <span className="font-mono bg-gray-100 px-1 rounded text-xs">{result.raw_ocr}</span></>
-              : 'Make sure the code on the sticker back is clearly visible and well-lit'}
+            Make sure the code on the sticker back is clearly visible and well-lit
           </p>
           <div className="flex gap-3 justify-center">
             <button
