@@ -33,8 +33,8 @@ function FriendStickerModal({ friend, onClose }) {
   }, [friend.id])
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col shadow-2xl max-h-[85vh]">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
             <h3 className="font-bold text-gray-800">{friend.username}'s Duplicates</h3>

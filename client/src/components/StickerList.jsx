@@ -157,7 +157,7 @@ export default function StickerList({ refreshToken = 0 }) {
       {/* Add sticker */}
       <div className="mb-5">
         <p className="text-sm font-semibold text-gray-600 mb-2">Add a duplicate sticker</p>
-        <div className="flex gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row gap-2 mb-2">
           <input
             type="text"
             placeholder="Search by name or team…"
@@ -170,7 +170,7 @@ export default function StickerList({ refreshToken = 0 }) {
             placeholder="Code (e.g. ARG 17)"
             value={addCode}
             onChange={e => setAddCode(e.target.value)}
-            className="w-36 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
+            className="sm:w-36 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 uppercase"
           />
         </div>
         {addResults.length > 0 && (
