@@ -204,9 +204,9 @@ export default function StickerScanner({ onAdded }) {
       {state === STATES.IDLE && (
         <div className="text-center py-8 px-4">
           <div className="text-6xl mb-4">📷</div>
-          <p className="text-gray-600 font-medium mb-2">Scan a sticker back</p>
+          <p className="text-gray-600 font-medium mb-2">Scan the back of the sticker</p>
           <p className="text-gray-400 text-sm mb-6">
-            Point the camera at the code printed on the back of your sticker (e.g. <span className="font-mono bg-gray-100 px-1 rounded">ARG 17</span>)
+            Flip the sticker over — the code is printed on the back (e.g. <span className="font-mono bg-gray-100 px-1 rounded">ARG 17</span>). Make sure it's well-lit and in focus.
           </p>
           <button
             onClick={startCamera}

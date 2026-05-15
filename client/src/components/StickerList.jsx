@@ -59,6 +59,8 @@ function StickerCard({ entry, onUpdate, onRemove }) {
   )
 }
 
+const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
 export default function StickerList() {
   const [list, setList] = useState([])
   const [allStickers, setAllStickers] = useState([])
@@ -84,12 +86,12 @@ export default function StickerList() {
   // Search stickers to add
   useEffect(() => {
     if (!addSearch.trim() && !addCode.trim()) { setAddResults([]); return }
-    const q = (addSearch + addCode).toLowerCase()
+    const q = normalize(addSearch || addCode)
     const results = allStickers
       .filter(s =>
-        s.sticker_code.toLowerCase().includes(q) ||
-        (s.player_name || '').toLowerCase().includes(q) ||
-        s.team_name.toLowerCase().includes(q)
+        normalize(s.sticker_code).includes(q) ||
+        normalize(s.player_name || '').includes(q) ||
+        normalize(s.team_name).includes(q)
       )
       .slice(0, 8)
     setAddResults(results)
@@ -124,11 +126,11 @@ export default function StickerList() {
 
   const filtered = list.filter(e => {
     const matchTeam = !filterTeam || e.sticker.team_name === filterTeam
-    const q = search.toLowerCase()
+    const q = normalize(search)
     const matchSearch = !q ||
-      e.sticker.sticker_code.toLowerCase().includes(q) ||
-      (e.sticker.player_name || '').toLowerCase().includes(q) ||
-      e.sticker.team_name.toLowerCase().includes(q)
+      normalize(e.sticker.sticker_code).includes(q) ||
+      normalize(e.sticker.player_name || '').includes(q) ||
+      normalize(e.sticker.team_name).includes(q)
     return matchTeam && matchSearch
   })
 

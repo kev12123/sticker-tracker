@@ -117,13 +117,6 @@ def _fuzzy_correct(code: str) -> str | None:
             if alt in _CODE_SET:
                 return alt
 
-    # Handle OCR dropping the first character of a 3-letter code (e.g. "EX 17" → "MEX 17")
-    if len(prefix) == 2:
-        for lead in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
-            alt = f"{lead}{prefix} {num}"
-            if alt in _CODE_SET:
-                return alt
-
     return None
 
 
