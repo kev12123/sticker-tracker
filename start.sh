@@ -1,38 +1,38 @@
 #!/bin/bash
 set -e
 
-echo "DATABASE_URL set: $([ -n "$DATABASE_URL" ] && echo YES || echo NO)"
-if [ -n "$DATABASE_URL" ]; then
-  echo "DATABASE_URL prefix: ${DATABASE_URL:0:30}..."
-fi
-
 python3 -c "
-import psycopg2
-import os
-import time
+import os, time, urllib.parse, psycopg2
 
 url = os.environ.get('DATABASE_URL', '')
 if not url:
     raise RuntimeError('DATABASE_URL is not set')
 
-# Retry loop — Postgres service may still be starting
-for attempt in range(10):
+r = urllib.parse.urlparse(url)
+connect_kwargs = dict(
+    host=r.hostname,
+    port=r.port or 5432,
+    dbname=r.path.lstrip('/'),
+    user=r.username,
+    password=r.password,
+    sslmode='require',
+)
+
+for attempt in range(15):
     try:
-        conn = psycopg2.connect(url)
+        conn = psycopg2.connect(**connect_kwargs)
         break
     except psycopg2.OperationalError as e:
-        print(f'DB not ready (attempt {attempt+1}/10): {e}')
+        print(f'DB not ready (attempt {attempt+1}/15): {e}')
         time.sleep(3)
 else:
-    raise RuntimeError('Could not connect to PostgreSQL after 10 attempts')
+    raise RuntimeError('Could not connect to PostgreSQL after 15 attempts')
 
 cur = conn.cursor()
 
-# Apply full schema (IF NOT EXISTS is safe to re-run)
 with open('/app/schema.sql') as f:
     cur.execute(f.read())
 
-# Seed stickers only if catalogue is empty
 cur.execute('SELECT COUNT(*) FROM stickers')
 count = cur.fetchone()[0]
 if count == 0:

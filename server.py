@@ -43,9 +43,21 @@ app.add_middleware(
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
+def _pg_connect():
+    import urllib.parse
+    r = urllib.parse.urlparse(DATABASE_URL)
+    return psycopg2.connect(
+        host=r.hostname,
+        port=r.port or 5432,
+        dbname=r.path.lstrip("/"),
+        user=r.username,
+        password=r.password,
+        sslmode="require",
+    )
+
 @contextmanager
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = _pg_connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             yield cur
