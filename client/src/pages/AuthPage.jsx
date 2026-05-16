@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { Logo } from '../components/Logo'
 
 const COUNTRIES = [
   'Argentina','Australia','Austria','Belgium','Bolivia','Brazil','Canada','Chile',
@@ -46,7 +47,9 @@ export default function AuthPage() {
       <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto mb-4 rounded-3xl flex items-center justify-center text-4xl shadow-2xl" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>🏆</div>
+          <div className="w-24 h-24 mx-auto mb-4 rounded-3xl flex items-center justify-center shadow-2xl" style={{ background: 'linear-gradient(135deg, #1e3a8a, #4c1d95)' }}>
+            <Logo size={64} />
+          </div>
           <h1 className="text-4xl font-black text-white tracking-tight">Sticker Trader</h1>
           <p className="text-indigo-300 mt-2 text-sm font-medium tracking-wide uppercase">World Cup 2026 · Swap & Collect</p>
         </div>
