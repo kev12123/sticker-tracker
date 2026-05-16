@@ -31,7 +31,7 @@ TOKEN_EXPIRE_HOURS = 72
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer = HTTPBearer()
 
-app = FastAPI(title="Panini Tracker API")
+app = FastAPI(title="Sticker Trader API")
 _cors_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,

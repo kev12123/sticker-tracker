@@ -47,7 +47,7 @@ export default function AuthPage() {
         {/* Logo / Header */}
         <div className="text-center mb-8">
           <div className="text-6xl mb-3">⚽</div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Panini Tracker</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Sticker Trader</h1>
           <p className="text-blue-200 mt-1">World Cup 2026 Sticker Swap</p>
         </div>
 
