@@ -55,7 +55,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
       })
       onSent()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send swap request')
+      setError(err.response?.data?.detail || 'Failed to send trade request')
       setSubmitting(false)
     }
   }
@@ -66,7 +66,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <div>
-            <h3 className="font-bold text-gray-800">Propose Swap with {friend.username}</h3>
+            <h3 className="font-bold text-gray-800">Propose Trade with {friend.username}</h3>
             <p className="text-xs text-gray-400 mt-0.5">Select what you want and what you'll offer</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold">✕</button>
@@ -102,7 +102,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
                         const locked = committedIds.has(d.sticker.id)
                         return (
                           <option key={d.sticker.id} value={d.sticker.id} disabled={locked}>
-                            {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity}){locked ? ' — in pending swap' : ''}
+                            {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity}){locked ? ' — in pending trade' : ''}
                           </option>
                         )
                       })}
@@ -159,7 +159,7 @@ function FriendStickerModal({ friend, onClose }) {
   function handleSwapSent() {
     setShowSwap(false)
     setSwapSent(true)
-    toast(`Swap request sent to ${friend.username} ✓`)
+    toast(`Trade request sent to ${friend.username} ✓`)
   }
 
   return (
@@ -187,14 +187,14 @@ function FriendStickerModal({ friend, onClose }) {
               onClick={() => setShowSwap(true)}
               className="shrink-0 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors shadow-sm"
             >
-              Propose Swap
+              Propose Trade
             </button>
           </div>
         )}
 
         {swapSent && (
           <div className="mx-4 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
-            <p className="text-sm font-semibold text-blue-700">✅ Swap request sent!</p>
+            <p className="text-sm font-semibold text-blue-700">✅ Trade request sent!</p>
           </div>
         )}
 

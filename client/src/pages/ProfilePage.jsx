@@ -12,7 +12,7 @@ const TABS = [
   { id: 'stickers', icon: '🎴', label: 'Dupes' },
   { id: 'wanted',   icon: '🎯', label: 'Wanted' },
   { id: 'friends',  icon: '👥', label: 'Friends' },
-  { id: 'swaps',    icon: '🔄', label: 'Swaps' },
+  { id: 'swaps',    icon: '🔄', label: 'Trades' },
 ]
 
 function MobileNavItem({ tab, active, onClick }) {

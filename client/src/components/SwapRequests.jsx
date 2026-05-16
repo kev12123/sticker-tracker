@@ -22,7 +22,7 @@ function SwapCard({ swap, currentUserId, onRespond }) {
           <Avatar username={other.username} size="sm" />
           <div className="min-w-0">
             <p className="text-sm font-bold text-gray-800 truncate">{other.username}</p>
-            <p className="text-xs text-gray-400">{isReceiver ? 'wants to swap with you' : 'swap request sent'}</p>
+            <p className="text-xs text-gray-400">{isReceiver ? 'wants to trade with you' : 'trade request sent'}</p>
           </div>
         </div>
         <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${STATUS_STYLES[swap.status]}`}>
@@ -85,7 +85,7 @@ export default function SwapRequests() {
   async function handleRespond(swapId, status) {
     await api.patch(`/swaps/${swapId}`, { status })
     setSwaps(prev => prev.map(s => s.id === swapId ? { ...s, status } : s))
-    const msgs = { accepted: 'Swap accepted ✓', rejected: 'Swap declined', cancelled: 'Request cancelled' }
+    const msgs = { accepted: 'Trade accepted ✓', rejected: 'Trade declined', cancelled: 'Trade cancelled' }
     toast(msgs[status] || 'Updated', status === 'accepted' ? 'success' : 'info')
   }
 
@@ -104,7 +104,7 @@ export default function SwapRequests() {
             <path d="M18 38 H78 L62 22" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
             <path d="M82 62 H22 L38 78" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
-          <p className="font-semibold text-gray-400 text-base">No swap requests yet</p>
+          <p className="font-semibold text-gray-400 text-base">No trade requests yet</p>
           <p className="text-sm text-gray-300 mt-1">Add stickers to your Wanted list, then view a friend's duplicates</p>
         </div>
       ) : (
