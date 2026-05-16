@@ -614,6 +614,41 @@ def update_swap(swap_id: int, body: SwapStatusBody, me=Depends(get_current_user)
             "UPDATE swap_requests SET status = %s, updated_at = NOW() WHERE id = %s",
             (body.status, swap_id),
         )
+        if body.status == "accepted":
+            db.execute("SELECT offered_sticker_id, wanted_sticker_id FROM swap_items WHERE swap_id = %s", (swap_id,))
+            items = db.fetchall()
+            offerer_id = row["offerer_id"]
+            receiver_id = row["receiver_id"]
+            for item in items:
+                offered = item["offered_sticker_id"]
+                wanted = item["wanted_sticker_id"]
+                # Decrement offerer's duplicate of the offered sticker
+                db.execute(
+                    "UPDATE user_stickers SET quantity = quantity - 1 WHERE user_id = %s AND sticker_id = %s",
+                    (offerer_id, offered),
+                )
+                db.execute(
+                    "DELETE FROM user_stickers WHERE user_id = %s AND sticker_id = %s AND quantity < 1",
+                    (offerer_id, offered),
+                )
+                # Decrement receiver's duplicate of the wanted sticker
+                db.execute(
+                    "UPDATE user_stickers SET quantity = quantity - 1 WHERE user_id = %s AND sticker_id = %s",
+                    (receiver_id, wanted),
+                )
+                db.execute(
+                    "DELETE FROM user_stickers WHERE user_id = %s AND sticker_id = %s AND quantity < 1",
+                    (receiver_id, wanted),
+                )
+                # Remove from wanted lists
+                db.execute(
+                    "DELETE FROM user_wanted_stickers WHERE user_id = %s AND sticker_id = %s",
+                    (offerer_id, wanted),
+                )
+                db.execute(
+                    "DELETE FROM user_wanted_stickers WHERE user_id = %s AND sticker_id = %s",
+                    (receiver_id, offered),
+                )
     return {"ok": True}
 
 
