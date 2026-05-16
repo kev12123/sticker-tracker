@@ -114,7 +114,6 @@ export default function StickerScanner({ onAdded }) {
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
 
     setState(STATES.PROCESSING)
-    stopCamera()
 
     canvas.toBlob(async (blob) => {
       const form = new FormData()
@@ -160,14 +159,10 @@ export default function StickerScanner({ onAdded }) {
     try {
       await api.post('/stickers/list', { sticker_id: selected.id })
       onAdded?.()
-      setState(STATES.ADDED)
-      // Auto-restart camera after brief success flash
-      setTimeout(() => {
-        setResult(null)
-        setSelected(null)
-        setExistingQty(0)
-        startCamera()
-      }, 1200)
+      setResult(null)
+      setSelected(null)
+      setExistingQty(0)
+      setState(STATES.CAMERA)
     } catch (err) {
       setErrorMsg(err.response?.data?.detail || 'Failed to add sticker')
       setState(STATES.ERROR)
@@ -297,7 +292,7 @@ export default function StickerScanner({ onAdded }) {
               Add to My List
             </button>
             <button
-              onClick={reset}
+              onClick={() => setState(STATES.CAMERA)}
               className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium rounded-2xl transition-colors"
             >
               Cancel
@@ -354,7 +349,7 @@ export default function StickerScanner({ onAdded }) {
           </p>
           <div className="flex gap-3 justify-center">
             <button
-              onClick={() => { setResult(null); startCamera() }}
+              onClick={() => { setResult(null); setState(STATES.CAMERA) }}
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2.5 rounded-2xl transition-colors"
             >
               Try Again
@@ -402,20 +397,6 @@ export default function StickerScanner({ onAdded }) {
         </div>
       )}
 
-      {/* ── ADDED — brief flash before camera restarts ── */}
-      {state === STATES.ADDED && selected && (
-        <div className="text-center py-12 px-4">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">✅</span>
-          </div>
-          <p className="font-bold text-emerald-600 text-lg">Added!</p>
-          <p className="text-gray-500 text-sm mt-1">
-            <span className="font-semibold">{selected.sticker_code}</span>
-            {selected.player_name ? ` · ${selected.player_name}` : ''}
-          </p>
-          <p className="text-xs text-gray-400 mt-3">Camera restarting…</p>
-        </div>
-      )}
 
       {/* ── ERROR ── */}
       {state === STATES.ERROR && (
@@ -424,7 +405,7 @@ export default function StickerScanner({ onAdded }) {
           <p className="font-semibold text-gray-700">Something went wrong</p>
           <p className="text-sm text-red-500 mt-1 mb-6">{errorMsg}</p>
           <button
-            onClick={reset}
+            onClick={() => { setErrorMsg(''); setState(STATES.CAMERA) }}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-2.5 rounded-2xl transition-colors"
           >
             Try Again
