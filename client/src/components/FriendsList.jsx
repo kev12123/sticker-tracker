@@ -8,10 +8,13 @@ const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 // ── Swap Proposal Modal ───────────────────────────────────────────────────────
 
-function SwapProposalModal({ friend, matches, onClose, onSent }) {
+function SwapProposalModal({ friend, matches, reverseMatches, friendDupes, onClose, onSent }) {
   const [myDupes, setMyDupes] = useState([])
   const [committedIds, setCommittedIds] = useState(new Set())
+  // Section 1: stickers I want from friend → I offer something
   const [pairs, setPairs] = useState(matches.map(m => ({ wanted: m, offeredId: null })))
+  // Section 2: stickers friend wants from me → I pick what I want back
+  const [reversePairs, setReversePairs] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,6 +30,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
     }).catch(() => {})
   }, [])
 
+  // Section 1 helpers
   function toggleWanted(entry) {
     setPairs(prev => {
       const exists = prev.find(p => p.wanted.sticker.id === entry.sticker.id)
@@ -34,31 +38,46 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
       return [...prev, { wanted: entry, offeredId: null }]
     })
   }
-
   function setOffer(idx, offeredId) {
     setPairs(prev => prev.map((p, i) => i === idx ? { ...p, offeredId } : p))
   }
 
+  // Section 2 helpers
+  function toggleGiving(entry) {
+    setReversePairs(prev => {
+      const exists = prev.find(p => p.giving.sticker.id === entry.sticker.id)
+      if (exists) return prev.filter(p => p.giving.sticker.id !== entry.sticker.id)
+      return [...prev, { giving: entry, wantedId: null }]
+    })
+  }
+  function setWantBack(idx, wantedId) {
+    setReversePairs(prev => prev.map((p, i) => i === idx ? { ...p, wantedId } : p))
+  }
+
   const readyPairs = pairs.filter(p => p.offeredId !== null)
+  const readyReverse = reversePairs.filter(p => p.wantedId !== null)
+  const totalReady = readyPairs.length + readyReverse.length
 
   async function submit() {
-    if (readyPairs.length === 0) { setError('Pick at least one pair to swap'); return }
+    if (totalReady === 0) { setError('Select at least one sticker pair to trade'); return }
     setSubmitting(true)
     setError('')
     try {
-      await api.post('/swaps', {
-        receiver_id: friend.id,
-        items: readyPairs.map(p => ({
-          offered_sticker_id: p.offeredId,
-          wanted_sticker_id: p.wanted.sticker.id,
-        })),
-      })
+      const items = [
+        ...readyPairs.map(p => ({ offered_sticker_id: p.offeredId, wanted_sticker_id: p.wanted.sticker.id })),
+        ...readyReverse.map(p => ({ offered_sticker_id: p.giving.sticker.id, wanted_sticker_id: p.wantedId })),
+      ]
+      await api.post('/swaps', { receiver_id: friend.id, items })
       onSent()
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to send trade request')
       setSubmitting(false)
     }
   }
+
+  const SectionLabel = ({ children }) => (
+    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 pt-2 pb-1">{children}</p>
+  )
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-[60] sm:p-4"
@@ -67,51 +86,102 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <div>
             <h3 className="font-bold text-gray-800">Propose Trade with {friend.username}</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Select what you want and what you'll offer</p>
+            <p className="text-xs text-gray-400 mt-0.5">Select stickers to trade — both directions</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold">✕</button>
         </div>
 
-        <div className="overflow-y-auto flex-1 p-4 space-y-3">
-          {matches.map((entry) => {
-            const pair = pairs.find(p => p.wanted.sticker.id === entry.sticker.id)
-            const isSelected = !!pair
-            const pairIdx = pairs.indexOf(pair)
-            return (
-              <div key={entry.sticker.id} className={`rounded-xl border-2 transition-colors ${isSelected ? 'border-blue-400 bg-blue-50/40' : 'border-gray-100'}`}>
-                <button onClick={() => toggleWanted(entry)} className="w-full flex items-center gap-3 p-3 text-left">
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
-                    {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {/* ── Section 1: what you want from them ── */}
+          {matches.length > 0 && (
+            <>
+              <SectionLabel>Stickers you want from {friend.username}</SectionLabel>
+              {matches.map((entry) => {
+                const pair = pairs.find(p => p.wanted.sticker.id === entry.sticker.id)
+                const isSelected = !!pair
+                const pairIdx = pairs.indexOf(pair)
+                return (
+                  <div key={entry.sticker.id} className={`rounded-xl border-2 transition-colors ${isSelected ? 'border-blue-400 bg-blue-50/40' : 'border-gray-100'}`}>
+                    <button onClick={() => toggleWanted(entry)} className="w-full flex items-center gap-3 p-3 text-left">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+                        {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <span className="text-xs font-black bg-gray-900 text-white px-2.5 py-0.5 rounded-full tracking-wider">{entry.sticker.sticker_code}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{entry.sticker.player_name || entry.sticker.sticker_code}</p>
+                        <p className="text-xs text-gray-400">{entry.sticker.team_name}</p>
+                      </div>
+                    </button>
+                    {isSelected && (
+                      <div className="px-3 pb-3">
+                        <p className="text-xs text-gray-500 mb-1.5 font-medium">You offer in return:</p>
+                        <select
+                          value={pair.offeredId ?? ''}
+                          onChange={e => setOffer(pairIdx, e.target.value ? Number(e.target.value) : null)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        >
+                          <option value="">— pick one of your duplicates —</option>
+                          {myDupes.map(d => {
+                            const locked = committedIds.has(d.sticker.id)
+                            return (
+                              <option key={d.sticker.id} value={d.sticker.id} disabled={locked}>
+                                {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity}){locked ? ' — in pending trade' : ''}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs font-black bg-gray-900 text-white px-2.5 py-0.5 rounded-full tracking-wider">{entry.sticker.sticker_code}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{entry.sticker.player_name || entry.sticker.sticker_code}</p>
-                    <p className="text-xs text-gray-400">{entry.sticker.team_name}</p>
+                )
+              })}
+            </>
+          )}
+
+          {/* ── Section 2: what they want from you ── */}
+          {reverseMatches.length > 0 && (
+            <>
+              <SectionLabel>Stickers {friend.username} wants from you</SectionLabel>
+              {reverseMatches.map((entry) => {
+                const rPair = reversePairs.find(p => p.giving.sticker.id === entry.sticker.id)
+                const isSelected = !!rPair
+                const rIdx = reversePairs.indexOf(rPair)
+                const locked = committedIds.has(entry.sticker.id)
+                return (
+                  <div key={entry.sticker.id} className={`rounded-xl border-2 transition-colors ${locked ? 'border-gray-100 opacity-50' : isSelected ? 'border-emerald-400 bg-emerald-50/40' : 'border-gray-100'}`}>
+                    <button onClick={() => !locked && toggleGiving(entry)} className="w-full flex items-center gap-3 p-3 text-left" disabled={locked}>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'}`}>
+                        {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <span className="text-xs font-black bg-gray-900 text-white px-2.5 py-0.5 rounded-full tracking-wider">{entry.sticker.sticker_code}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{entry.sticker.player_name || entry.sticker.sticker_code}</p>
+                        <p className="text-xs text-gray-400">{entry.sticker.team_name}</p>
+                      </div>
+                      {locked && <span className="text-xs text-gray-400 shrink-0">in pending trade</span>}
+                    </button>
+                    {isSelected && (
+                      <div className="px-3 pb-3">
+                        <p className="text-xs text-gray-500 mb-1.5 font-medium">You want in return:</p>
+                        <select
+                          value={rPair.wantedId ?? ''}
+                          onChange={e => setWantBack(rIdx, e.target.value ? Number(e.target.value) : null)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        >
+                          <option value="">— pick one of their duplicates —</option>
+                          {friendDupes.map(d => (
+                            <option key={d.sticker.id} value={d.sticker.id}>
+                              {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
-                </button>
-                {isSelected && (
-                  <div className="px-3 pb-3">
-                    <p className="text-xs text-gray-500 mb-1.5 font-medium">You offer in return:</p>
-                    <select
-                      value={pair.offeredId ?? ''}
-                      onChange={e => setOffer(pairIdx, e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    >
-                      <option value="">— pick one of your duplicates —</option>
-                      {myDupes.map(d => {
-                        const locked = committedIds.has(d.sticker.id)
-                        return (
-                          <option key={d.sticker.id} value={d.sticker.id} disabled={locked}>
-                            {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity}){locked ? ' — in pending trade' : ''}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                )
+              })}
+            </>
+          )}
         </div>
 
         {error && <p className="text-red-500 text-sm px-5 pb-2">{error}</p>}
@@ -120,10 +190,10 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
           <button onClick={onClose} className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-medium text-sm">Cancel</button>
           <button
             onClick={submit}
-            disabled={submitting || readyPairs.length === 0}
+            disabled={submitting || totalReady === 0}
             className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            {submitting ? 'Sending…' : `Send Request (${readyPairs.length})`}
+            {submitting ? 'Sending…' : `Send Request (${totalReady})`}
           </button>
         </div>
       </div>
@@ -135,6 +205,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
 
 function FriendStickerModal({ friend, onClose }) {
   const [entries, setEntries] = useState([])
+  const [reverseMatches, setReverseMatches] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showSwap, setShowSwap] = useState(false)
@@ -142,9 +213,14 @@ function FriendStickerModal({ friend, onClose }) {
   const toast = useToast()
 
   useEffect(() => {
-    api.get(`/friends/${friend.id}/stickers`)
-      .then(res => { setEntries(res.data); setLoading(false) })
-      .catch(() => setLoading(false))
+    Promise.all([
+      api.get(`/friends/${friend.id}/stickers`),
+      api.get(`/friends/${friend.id}/wanted-matches`),
+    ]).then(([friendRes, reverseRes]) => {
+      setEntries(friendRes.data)
+      setReverseMatches(reverseRes.data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [friend.id])
 
   const matches = entries.filter(e => e.i_want)
@@ -177,11 +253,15 @@ function FriendStickerModal({ friend, onClose }) {
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold shrink-0 ml-3">✕</button>
         </div>
 
-        {!loading && matches.length > 0 && !swapSent && (
+        {!loading && (matches.length > 0 || reverseMatches.length > 0) && !swapSent && (
           <div className="mx-4 mt-3 p-3 rounded-xl flex items-center justify-between gap-3" style={{ background: 'linear-gradient(135deg, #d1fae5, #a7f3d0)', border: '1px solid #6ee7b7' }}>
             <div>
-              <p className="text-sm font-bold text-emerald-800">🎯 {matches.length} sticker{matches.length !== 1 ? 's' : ''} you want!</p>
-              <p className="text-xs text-emerald-600 mt-0.5">From your wanted list</p>
+              {matches.length > 0 && (
+                <p className="text-sm font-bold text-emerald-800">🎯 {matches.length} sticker{matches.length !== 1 ? 's' : ''} you want from them</p>
+              )}
+              {reverseMatches.length > 0 && (
+                <p className="text-sm font-bold text-emerald-800">🎯 {reverseMatches.length} sticker{reverseMatches.length !== 1 ? 's' : ''} they want from you</p>
+              )}
             </div>
             <button
               onClick={() => setShowSwap(true)}
@@ -241,7 +321,14 @@ function FriendStickerModal({ friend, onClose }) {
       </div>
 
       {showSwap && (
-        <SwapProposalModal friend={friend} matches={matches} onClose={() => setShowSwap(false)} onSent={handleSwapSent} />
+        <SwapProposalModal
+          friend={friend}
+          matches={matches}
+          reverseMatches={reverseMatches}
+          friendDupes={entries}
+          onClose={() => setShowSwap(false)}
+          onSent={handleSwapSent}
+        />
       )}
     </div>
   )

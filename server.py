@@ -483,6 +483,29 @@ def get_friend_stickers(friend_id: int, me=Depends(get_current_user)):
     return entries
 
 
+@app.get("/api/friends/{friend_id}/wanted-matches")
+def get_friend_wanted_matches(friend_id: int, me=Depends(get_current_user)):
+    """Your duplicates that are on the friend's wanted list."""
+    with get_db() as db:
+        db.execute("""
+            SELECT 1 FROM friendships
+            WHERE ((requester_id = %s AND receiver_id = %s) OR (requester_id = %s AND receiver_id = %s))
+              AND status = 'accepted'
+        """, (me["id"], friend_id, friend_id, me["id"]))
+        if not db.fetchone():
+            raise HTTPException(403, "Not friends with this user")
+        db.execute("""
+            SELECT us.id, us.quantity,
+                   s.id as sticker_id, s.sticker_code, s.team_name, s.player_name, s.sticker_type, s.club
+            FROM user_wanted_stickers uw
+            JOIN stickers s ON s.id = uw.sticker_id
+            JOIN user_stickers us ON us.sticker_id = s.id AND us.user_id = %s
+            WHERE uw.user_id = %s
+        """, (me["id"], friend_id))
+        rows = db.fetchall()
+    return [_sticker_entry(r) for r in rows]
+
+
 # ── Swaps ─────────────────────────────────────────────────────────────────────
 
 SWAP_LIST_QUERY = """
