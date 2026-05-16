@@ -51,7 +51,7 @@ export default function AuthPage() {
             <Logo size={64} />
           </div>
           <h1 className="text-4xl font-black text-white tracking-tight">Sticker Trader</h1>
-          <p className="text-indigo-300 mt-2 text-sm font-medium tracking-wide uppercase">World Cup 2026 · Swap & Collect</p>
+          <p className="text-indigo-300 mt-2 text-sm font-medium tracking-wide uppercase">World Cup 2026 · Trade & Collect</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
