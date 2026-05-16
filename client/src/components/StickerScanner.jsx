@@ -65,14 +65,18 @@ export default function StickerScanner({ onAdded }) {
   const [manualCode, setManualCode] = useState('')
   const [manualError, setManualError] = useState('')
 
-  // Start camera
+  // Start camera — attach stream directly so video element never needs remounting
   const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
       })
       streamRef.current = stream
-      setState(STATES.CAMERA) // render <video> first, then attach in useEffect
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play().catch(console.error)
+      }
+      setState(STATES.CAMERA)
     } catch (err) {
       setErrorMsg(
         err.name === 'NotAllowedError'
@@ -82,14 +86,6 @@ export default function StickerScanner({ onAdded }) {
       setState(STATES.ERROR)
     }
   }, [facingMode])
-
-  // Attach stream to <video> after it mounts (state transition renders the element)
-  useEffect(() => {
-    if (state === STATES.CAMERA && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current
-      videoRef.current.play().catch(console.error)
-    }
-  }, [state])
 
   // Stop camera stream
   const stopCamera = useCallback(() => {
@@ -229,44 +225,42 @@ export default function StickerScanner({ onAdded }) {
         </div>
       )}
 
-      {/* ── CAMERA ── */}
-      {state === STATES.CAMERA && (
-        <div className="w-full relative">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="w-full rounded-2xl object-cover max-h-80"
-          />
-          {/* Viewfinder overlay */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="border-2 border-white/70 rounded-xl w-80 h-48 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
-          </div>
-          <p className="absolute top-3 left-0 right-0 text-center text-white/80 text-xs">
-            Align the sticker code inside the frame
-          </p>
-
-          {/* Controls */}
-          <div className="flex items-center justify-center gap-4 mt-4">
-            <button
-              onClick={flipCamera}
-              className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors"
-              title="Flip camera"
-            >🔄</button>
-            <button
-              onClick={capture}
-              className="w-20 h-20 rounded-full bg-white border-4 border-blue-500 hover:bg-blue-50 flex items-center justify-center shadow-lg transition-colors"
-            >
-              <div className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700" />
-            </button>
-            <button
-              onClick={() => { stopCamera(); reset() }}
-              className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors"
-              title="Cancel"
-            >✕</button>
-          </div>
+      {/* ── CAMERA ── always in DOM so iOS Safari never loses the stream */}
+      <div className={`w-full relative ${state === STATES.CAMERA ? '' : 'hidden'}`}>
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className="w-full rounded-2xl object-cover max-h-80"
+        />
+        {/* Viewfinder overlay */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="border-2 border-white/70 rounded-xl w-80 h-48 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
         </div>
-      )}
+        <p className="absolute top-3 left-0 right-0 text-center text-white/80 text-xs">
+          Align the sticker code inside the frame
+        </p>
+
+        {/* Controls */}
+        <div className="flex items-center justify-center gap-4 mt-4">
+          <button
+            onClick={flipCamera}
+            className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors"
+            title="Flip camera"
+          >🔄</button>
+          <button
+            onClick={capture}
+            className="w-20 h-20 rounded-full bg-white border-4 border-blue-500 hover:bg-blue-50 flex items-center justify-center shadow-lg transition-colors"
+          >
+            <div className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700" />
+          </button>
+          <button
+            onClick={() => { stopCamera(); reset() }}
+            className="w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors"
+            title="Cancel"
+          >✕</button>
+        </div>
+      </div>
 
       {/* ── PROCESSING ── */}
       {state === STATES.PROCESSING && (
