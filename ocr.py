@@ -8,15 +8,26 @@ Fallback: Tesseract (when ANTHROPIC_API_KEY is not set)
 
 import base64
 import re
-import sqlite3
+import urllib.parse
 from io import BytesIO
 
+import psycopg2
+import psycopg2.extras
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 import os as _os
-DB_PATH = _os.getenv("DB_PATH", "stickers.db")
+_DATABASE_URL = _os.getenv("DATABASE_URL", "")
 _ANTHROPIC_KEY = _os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def _pg_connect():
+    r = urllib.parse.urlparse(_DATABASE_URL)
+    return psycopg2.connect(
+        host=r.hostname, port=r.port or 5432,
+        dbname=r.path.lstrip("/"), user=r.username, password=r.password,
+        sslmode="require",
+    )
 
 _CODE_SET: set[str] = set()
 _CODE_LIST: list[str] = []
@@ -29,8 +40,11 @@ def _load_codes():
     global _CODE_SET, _CODE_LIST
     if _CODE_SET:
         return
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT sticker_code FROM stickers").fetchall()
+    conn = _pg_connect()
+    cur = conn.cursor()
+    cur.execute("SELECT sticker_code FROM stickers")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     _CODE_SET = {r[0] for r in rows}
     _CODE_LIST = sorted(_CODE_SET)
@@ -227,13 +241,15 @@ def _fuzzy_correct(code: str) -> str | None:
 
 
 def lookup_sticker(code: str) -> dict | None:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
+    conn = _pg_connect()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
         "SELECT id, sticker_code, team_name, player_name, sticker_type, club "
-        "FROM stickers WHERE sticker_code = ?",
+        "FROM stickers WHERE sticker_code = %s",
         (code,)
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return dict(row) if row else None
 
