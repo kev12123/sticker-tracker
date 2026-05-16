@@ -108,11 +108,11 @@ export default function ProfilePage() {
         <div className="h-24" />
       </div>
 
-      {/* Desktop floating scan button */}
+      {/* Desktop floating scan button — hidden on Wanted tab */}
       <button
         onClick={() => setScanOpen(true)}
         style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-        className="hidden sm:flex fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40"
+        className={`fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40 ${tab === 'wanted' ? 'hidden' : 'hidden sm:flex'}`}
         title="Scan a sticker"
       >
         📷
@@ -128,10 +128,10 @@ export default function ProfilePage() {
           <MobileNavItem tab={TABS[1]} active={tab} onClick={setTab} />
           {/* Scan button */}
           <button
-            onClick={() => setScanOpen(true)}
+            onClick={() => tab !== 'wanted' && setScanOpen(true)}
             className="flex-1 flex flex-col items-center pb-2 -mt-1"
           >
-            <div className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 flex items-center justify-center text-white text-2xl shadow-lg ring-4 ring-white -mt-5 transition-all active:scale-95">
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl shadow-lg ring-4 ring-white -mt-5 transition-all active:scale-95 ${tab === 'wanted' ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'}`}>
               📷
             </div>
             <span className="text-[10px] font-semibold text-gray-400 mt-1">Scan</span>
