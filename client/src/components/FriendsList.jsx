@@ -1,18 +1,16 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
+import { Avatar } from '../utils/avatar'
+import { useToast } from './Toast'
+import { SkeletonFriendRow } from './Skeleton'
 
 const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 // ── Swap Proposal Modal ───────────────────────────────────────────────────────
-// Shows stickers from friend's list that you want, lets you pick which of your
-// duplicates to offer for each, then submits as one bundle swap request.
 
 function SwapProposalModal({ friend, matches, onClose, onSent }) {
   const [myDupes, setMyDupes] = useState([])
-  // pairs: { wantedEntry (friend's), offeredId (my sticker id) }
-  const [pairs, setPairs] = useState(
-    matches.map(m => ({ wanted: m, offeredId: null }))
-  )
+  const [pairs, setPairs] = useState(matches.map(m => ({ wanted: m, offeredId: null })))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -20,16 +18,16 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
     api.get('/stickers/list').then(res => setMyDupes(res.data)).catch(() => {})
   }, [])
 
-  function setOffer(idx, offeredId) {
-    setPairs(prev => prev.map((p, i) => i === idx ? { ...p, offeredId } : p))
-  }
-
   function toggleWanted(entry) {
     setPairs(prev => {
       const exists = prev.find(p => p.wanted.sticker.id === entry.sticker.id)
       if (exists) return prev.filter(p => p.wanted.sticker.id !== entry.sticker.id)
       return [...prev, { wanted: entry, offeredId: null }]
     })
+  }
+
+  function setOffer(idx, offeredId) {
+    setPairs(prev => prev.map((p, i) => i === idx ? { ...p, offeredId } : p))
   }
 
   const readyPairs = pairs.filter(p => p.offeredId !== null)
@@ -66,33 +64,28 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
         </div>
 
         <div className="overflow-y-auto flex-1 p-4 space-y-3">
-          {matches.map((entry, idx) => {
+          {matches.map((entry) => {
             const pair = pairs.find(p => p.wanted.sticker.id === entry.sticker.id)
             const isSelected = !!pair
+            const pairIdx = pairs.indexOf(pair)
             return (
               <div key={entry.sticker.id} className={`rounded-xl border-2 transition-colors ${isSelected ? 'border-blue-400 bg-blue-50/40' : 'border-gray-100'}`}>
-                {/* Header row — toggle selection */}
-                <button
-                  onClick={() => toggleWanted(entry)}
-                  className="w-full flex items-center gap-3 p-3 text-left"
-                >
+                <button onClick={() => toggleWanted(entry)} className="w-full flex items-center gap-3 p-3 text-left">
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
                     {isSelected && <span className="text-white text-xs font-bold">✓</span>}
                   </div>
-                  <span className="text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded">{entry.sticker.sticker_code}</span>
+                  <span className="text-xs font-black bg-gray-900 text-white px-2.5 py-0.5 rounded-full tracking-wider">{entry.sticker.sticker_code}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{entry.sticker.player_name || entry.sticker.sticker_code}</p>
                     <p className="text-xs text-gray-400">{entry.sticker.team_name}</p>
                   </div>
                 </button>
-
-                {/* Offer picker — shown when selected */}
                 {isSelected && (
                   <div className="px-3 pb-3">
                     <p className="text-xs text-gray-500 mb-1.5 font-medium">You offer in return:</p>
                     <select
                       value={pair.offeredId ?? ''}
-                      onChange={e => setOffer(pairs.indexOf(pair), e.target.value ? Number(e.target.value) : null)}
+                      onChange={e => setOffer(pairIdx, e.target.value ? Number(e.target.value) : null)}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
                       <option value="">— pick one of your duplicates —</option>
@@ -118,7 +111,7 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
             disabled={submitting || readyPairs.length === 0}
             className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl font-semibold text-sm transition-colors"
           >
-            {submitting ? 'Sending…' : `Send Request (${readyPairs.length} sticker${readyPairs.length !== 1 ? 's' : ''})`}
+            {submitting ? 'Sending…' : `Send Request (${readyPairs.length})`}
           </button>
         </div>
       </div>
@@ -134,6 +127,7 @@ function FriendStickerModal({ friend, onClose }) {
   const [search, setSearch] = useState('')
   const [showSwap, setShowSwap] = useState(false)
   const [swapSent, setSwapSent] = useState(false)
+  const toast = useToast()
 
   useEffect(() => {
     api.get(`/friends/${friend.id}/stickers`)
@@ -150,28 +144,36 @@ function FriendStickerModal({ friend, onClose }) {
       normalize(e.sticker.team_name).includes(q)
   })
 
+  function handleSwapSent() {
+    setShowSwap(false)
+    setSwapSent(true)
+    toast(`Swap request sent to ${friend.username} ✓`)
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 sm:p-4"
          onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col shadow-2xl max-h-[85vh]">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <div>
-            <h3 className="font-bold text-gray-800">{friend.username}'s Duplicates</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{entries.length} available · {matches.length} match your wanted list</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar username={friend.username} size="md" />
+            <div className="min-w-0">
+              <h3 className="font-bold text-gray-800 truncate">{friend.username}'s Duplicates</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{entries.length} available · {matches.length} match your wanted list</p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold">×</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold shrink-0 ml-3">✕</button>
         </div>
 
-        {/* Matches banner */}
         {!loading && matches.length > 0 && !swapSent && (
-          <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+          <div className="mx-4 mt-3 p-3 rounded-xl flex items-center justify-between gap-3" style={{ background: 'linear-gradient(135deg, #d1fae5, #a7f3d0)', border: '1px solid #6ee7b7' }}>
             <div>
-              <p className="text-sm font-semibold text-emerald-700">🎯 {matches.length} sticker{matches.length !== 1 ? 's' : ''} you want!</p>
-              <p className="text-xs text-emerald-600 mt-0.5">They have stickers from your wanted list</p>
+              <p className="text-sm font-bold text-emerald-800">🎯 {matches.length} sticker{matches.length !== 1 ? 's' : ''} you want!</p>
+              <p className="text-xs text-emerald-600 mt-0.5">From your wanted list</p>
             </div>
             <button
               onClick={() => setShowSwap(true)}
-              className="shrink-0 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
+              className="shrink-0 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors shadow-sm"
             >
               Propose Swap
             </button>
@@ -184,7 +186,6 @@ function FriendStickerModal({ friend, onClose }) {
           </div>
         )}
 
-        {/* Search */}
         <div className="px-4 py-3">
           <input
             type="text"
@@ -197,21 +198,30 @@ function FriendStickerModal({ friend, onClose }) {
 
         <div className="overflow-y-auto flex-1 px-4 pb-4 space-y-2">
           {loading ? (
-            <p className="text-center text-gray-400 py-8">Loading…</p>
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl border border-gray-100 animate-pulse">
+                <div className="w-14 h-5 bg-gray-200 rounded-full shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3 bg-gray-200 rounded-full w-2/3" />
+                  <div className="h-2.5 bg-gray-100 rounded-full w-1/2" />
+                </div>
+                <div className="w-8 h-5 bg-gray-200 rounded-full" />
+              </div>
+            ))
           ) : filtered.length === 0 ? (
             <p className="text-center text-gray-400 py-8">No stickers match</p>
           ) : (
             filtered.map(entry => (
               <div key={entry.id} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-colors ${entry.i_want ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-100'}`}>
-                <span className="text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded">
+                <span className="text-xs font-black bg-gray-900 text-white px-2.5 py-0.5 rounded-full tracking-wider shrink-0">
                   {entry.sticker.sticker_code}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-700 truncate">{entry.sticker.player_name || entry.sticker.sticker_code}</p>
                   <p className="text-xs text-gray-400">{entry.sticker.team_name}</p>
                 </div>
-                {entry.i_want && <span className="text-xs font-medium text-emerald-600 shrink-0">🎯 You want</span>}
-                <span className="text-xs text-gray-500 font-medium shrink-0">×{entry.quantity}</span>
+                {entry.i_want && <span className="text-xs font-bold text-emerald-600 shrink-0">🎯</span>}
+                <span className="text-xs text-gray-500 font-bold shrink-0">×{entry.quantity}</span>
               </div>
             ))
           )}
@@ -219,12 +229,7 @@ function FriendStickerModal({ friend, onClose }) {
       </div>
 
       {showSwap && (
-        <SwapProposalModal
-          friend={friend}
-          matches={matches}
-          onClose={() => setShowSwap(false)}
-          onSent={() => { setShowSwap(false); setSwapSent(true) }}
-        />
+        <SwapProposalModal friend={friend} matches={matches} onClose={() => setShowSwap(false)} onSent={handleSwapSent} />
       )}
     </div>
   )
@@ -234,18 +239,23 @@ function FriendStickerModal({ friend, onClose }) {
 
 function FriendCard({ friend, onViewStickers }) {
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
-      <div className="w-10 h-10 rounded-full bg-emerald-400 flex items-center justify-center text-white font-bold shrink-0">
-        {friend.username[0].toUpperCase()}
-      </div>
+    <div className="flex items-center gap-3 p-4 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all">
+      <Avatar username={friend.username} size="md" />
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-800 text-sm">{friend.username}</p>
+        <p className="font-bold text-gray-800 text-sm">{friend.username}</p>
         {friend.country && <p className="text-xs text-gray-400">📍 {friend.country}</p>}
-        <p className="text-xs text-blue-500 mt-0.5">{friend.duplicate_count ?? '?'} duplicates</p>
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          <span className="text-xs text-blue-500 font-medium">{friend.duplicate_count ?? '?'} dupes</span>
+          {friend.match_count > 0 && (
+            <span className="text-xs bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+              🎯 {friend.match_count} match{friend.match_count !== 1 ? 'es' : ''}
+            </span>
+          )}
+        </div>
       </div>
       <button
         onClick={() => onViewStickers(friend)}
-        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium shrink-0"
+        className="text-xs bg-gray-900 hover:bg-gray-700 text-white px-3 py-1.5 rounded-xl transition-colors font-semibold shrink-0"
       >
         View List
       </button>
@@ -263,16 +273,12 @@ export default function FriendsList() {
   const [searchError, setSearchError] = useState('')
   const [viewFriend, setViewFriend] = useState(null)
   const [loading, setLoading] = useState(true)
+  const toast = useToast()
 
   useEffect(() => {
-    Promise.all([
-      api.get('/friends'),
-      api.get('/friends/requests'),
-    ]).then(([friendsRes, requestsRes]) => {
-      setFriends(friendsRes.data)
-      setPending(requestsRes.data)
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    Promise.all([api.get('/friends'), api.get('/friends/requests')])
+      .then(([fr, rr]) => { setFriends(fr.data); setPending(rr.data); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [])
 
   async function findUser() {
@@ -290,6 +296,7 @@ export default function FriendsList() {
     await api.post('/friends/request', { user_id: userId })
     setSearchResult(null)
     setSearchUser('')
+    toast('Friend request sent ✓')
   }
 
   async function respondRequest(friendshipId, accept) {
@@ -298,32 +305,30 @@ export default function FriendsList() {
     if (accept) {
       const { data } = await api.get('/friends')
       setFriends(data)
+      toast('Friend added ✓')
     }
   }
-
-  if (loading) return <div className="p-8 text-center text-gray-400">Loading friends…</div>
 
   return (
     <div className="p-4 sm:p-6">
       {/* Pending requests */}
       {pending.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-600 mb-3">
-            Pending Requests <span className="bg-red-100 text-red-600 rounded-full px-2 py-0.5 text-xs ml-1">{pending.length}</span>
-          </h3>
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+            Pending Requests
+            <span className="bg-red-100 text-red-600 rounded-full px-2 py-0.5 text-xs ml-2">{pending.length}</span>
+          </p>
           <div className="space-y-2">
             {pending.map(req => (
               <div key={req.id} className="flex items-center gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50">
-                <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                  {req.requester.username[0].toUpperCase()}
-                </div>
-                <p className="flex-1 text-sm font-medium text-gray-700 truncate">
-                  <span className="font-semibold">{req.requester.username}</span> wants to be friends
+                <Avatar username={req.requester.username} size="sm" />
+                <p className="flex-1 text-sm text-gray-700 truncate min-w-0">
+                  <span className="font-bold">{req.requester.username}</span> wants to be friends
                 </p>
                 <button onClick={() => respondRequest(req.id, true)}
-                  className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-medium shrink-0">Accept</button>
+                  className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-semibold shrink-0">Accept</button>
                 <button onClick={() => respondRequest(req.id, false)}
-                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-medium shrink-0">Decline</button>
+                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-semibold shrink-0">Decline</button>
               </div>
             ))}
           </div>
@@ -332,7 +337,7 @@ export default function FriendsList() {
 
       {/* Add friend */}
       <div className="mb-6">
-        <h3 className="text-sm font-semibold text-gray-600 mb-2">Add a friend</h3>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Add a friend</p>
         <div className="flex gap-2">
           <input
             type="text"
@@ -340,36 +345,44 @@ export default function FriendsList() {
             value={searchUser}
             onChange={e => setSearchUser(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && findUser()}
-            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
           />
           <button onClick={findUser}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-xl font-medium transition-colors shrink-0">Search</button>
+            className="px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm rounded-xl font-semibold transition-colors shrink-0">Search</button>
         </div>
         {searchError && <p className="text-red-500 text-sm mt-2">{searchError}</p>}
         {searchResult && (
-          <div className="mt-2 p-3 border border-gray-200 rounded-xl flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-400 flex items-center justify-center text-white font-bold text-sm shrink-0">
-              {searchResult.username[0].toUpperCase()}
-            </div>
+          <div className="mt-2 p-3 border border-gray-200 rounded-xl bg-white flex items-center gap-3">
+            <Avatar username={searchResult.username} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-800 truncate">{searchResult.username}</p>
+              <p className="text-sm font-bold text-gray-800 truncate">{searchResult.username}</p>
               {searchResult.country && <p className="text-xs text-gray-400">{searchResult.country}</p>}
             </div>
             <button onClick={() => sendRequest(searchResult.id)}
-              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium shrink-0">Send Request</button>
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl font-semibold shrink-0">Send Request</button>
           </div>
         )}
       </div>
 
       {/* Friends list */}
-      <h3 className="text-sm font-semibold text-gray-600 mb-3">
-        My Friends <span className="text-gray-400">({friends.length})</span>
-      </h3>
-      {friends.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">👥</p>
-          <p className="font-medium">No friends yet</p>
-          <p className="text-sm mt-1">Search for users to send a friend request</p>
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+        My Friends <span className="text-gray-300 font-normal">({friends.length})</span>
+      </p>
+
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => <SkeletonFriendRow key={i} />)}
+        </div>
+      ) : friends.length === 0 ? (
+        <div className="text-center py-14 text-gray-300">
+          <svg viewBox="0 0 100 100" fill="none" className="w-20 h-20 mx-auto mb-4">
+            <circle cx="37" cy="35" r="14" stroke="currentColor" strokeWidth="3"/>
+            <path d="M9 80 Q9 58 37 58 Q65 58 65 80" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+            <circle cx="67" cy="32" r="11" stroke="currentColor" strokeWidth="3"/>
+            <path d="M45 76 Q45 58 67 58 Q89 58 89 76" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+          <p className="font-semibold text-gray-400 text-base">No friends yet</p>
+          <p className="text-sm text-gray-300 mt-1">Search for users to send a friend request</p>
         </div>
       ) : (
         <div className="space-y-2">

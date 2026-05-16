@@ -3,14 +3,35 @@
 body {
   margin: 0;
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  background: #f8f9fa;
+  background: #f1f5f9;
   color: #1a1a2e;
-  /* Respect iPhone notch / home indicator */
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Prevent iOS Safari from zooming in when tapping inputs.
-   Tailwind's text-sm (14px) triggers auto-zoom; !important beats the utility class. */
+/* Prevent iOS Safari from zooming in when tapping inputs */
 input, select, textarea {
   font-size: max(16px, 1em) !important;
+}
+
+/* FOIL sticker shimmer */
+@keyframes foil-shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+.foil-badge {
+  background: linear-gradient(90deg, #78350f, #b45309, #fef08a, #fbbf24, #fef08a, #b45309, #78350f) !important;
+  background-size: 200% auto !important;
+  animation: foil-shimmer 2.5s linear infinite !important;
+  color: #1c1917 !important;
+}
+
+/* Toast slide-up */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toast-enter {
+  animation: toast-in 0.2s ease-out forwards;
 }

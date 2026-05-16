@@ -320,11 +320,14 @@ def get_friends(me=Depends(get_current_user)):
     with get_db() as db:
         db.execute("""
             SELECT u.id, u.username, u.country,
-                   (SELECT COUNT(*) FROM user_stickers us WHERE us.user_id = u.id) AS duplicate_count
+                   (SELECT COUNT(*) FROM user_stickers us WHERE us.user_id = u.id) AS duplicate_count,
+                   (SELECT COUNT(*) FROM user_stickers us2
+                    JOIN user_wanted_stickers uw ON uw.sticker_id = us2.sticker_id
+                    WHERE us2.user_id = u.id AND uw.user_id = %s) AS match_count
             FROM friendships f
             JOIN users u ON u.id = CASE WHEN f.requester_id = %s THEN f.receiver_id ELSE f.requester_id END
             WHERE (f.requester_id = %s OR f.receiver_id = %s) AND f.status = 'accepted'
-        """, (me["id"], me["id"], me["id"]))
+        """, (me["id"], me["id"], me["id"], me["id"]))
         rows = db.fetchall()
     return [dict(r) for r in rows]
 

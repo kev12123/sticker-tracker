@@ -42,13 +42,13 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-emerald-700 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #0f0c29, #1a1a6e, #302b63, #24243e)' }}>
       <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <div className="text-6xl mb-3">⚽</div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Sticker Trader</h1>
-          <p className="text-blue-200 mt-1">World Cup 2026 Sticker Swap</p>
+          <div className="w-20 h-20 mx-auto mb-4 rounded-3xl flex items-center justify-center text-4xl shadow-2xl" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>🃏</div>
+          <h1 className="text-4xl font-black text-white tracking-tight">Sticker Trader</h1>
+          <p className="text-indigo-300 mt-2 text-sm font-medium tracking-wide uppercase">World Cup 2026 · Swap & Collect</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
