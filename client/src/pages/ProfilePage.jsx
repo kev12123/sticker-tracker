@@ -32,7 +32,7 @@ export default function ProfilePage() {
   const { user, logout } = useAuth()
   const [tab, setTab] = useState('stickers')
   const [scanOpen, setScanOpen] = useState(false)
-  const [scanKey, setScanKey] = useState(0)
+  const [listRefresh, setListRefresh] = useState(0)
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -89,7 +89,7 @@ export default function ProfilePage() {
           ))}
         </div>
         <div className="bg-white shadow-sm rounded-b-xl min-h-96">
-          {tab === 'stickers' && <StickerList refreshToken={scanKey} />}
+          {tab === 'stickers' && <StickerList refreshToken={listRefresh} />}
           {tab === 'wanted'   && <WantedList />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
@@ -100,7 +100,7 @@ export default function ProfilePage() {
       {/* Mobile content — shown without top tabs */}
       <div className="sm:hidden max-w-5xl mx-auto px-0">
         <div className="bg-white shadow-sm min-h-96">
-          {tab === 'stickers' && <StickerList refreshToken={scanKey} />}
+          {tab === 'stickers' && <StickerList refreshToken={listRefresh} />}
           {tab === 'wanted'   && <WantedList />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
@@ -158,8 +158,7 @@ export default function ProfilePage() {
             </div>
             <div className="overflow-y-auto flex-1 p-2">
               <StickerScanner
-                key={scanKey}
-                onAdded={() => setScanKey(k => k + 1)}
+                onAdded={() => setListRefresh(k => k + 1)}
               />
             </div>
           </div>
