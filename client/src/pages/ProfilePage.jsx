@@ -8,7 +8,7 @@ import StickerScanner from '../components/StickerScanner'
 import WantedList from '../components/WantedList'
 
 const TABS = [
-  { id: 'stickers', icon: '🃏', label: 'Dupes' },
+  { id: 'stickers', icon: '🏆', label: 'Dupes' },
   { id: 'wanted',   icon: '🎯', label: 'Wanted' },
   { id: 'friends',  icon: '👥', label: 'Friends' },
   { id: 'swaps',    icon: '🔄', label: 'Swaps' },
@@ -39,7 +39,7 @@ export default function ProfilePage() {
       <header className="sticky top-0 z-30 shadow-md" style={{ background: 'linear-gradient(135deg, #0f0c29, #302b63)' }}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-black text-base tracking-tight">
-            <span>🃏</span>
+            <span>🏆</span>
             <span>Sticker Trader</span>
           </div>
           <div className="flex items-center gap-3">
