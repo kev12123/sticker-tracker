@@ -4,11 +4,13 @@ Run with: uvicorn server:app --reload --port 8000
 """
 
 import os
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import psycopg2
+import psycopg2.extras
+import psycopg2.errors
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -21,7 +23,7 @@ from pydantic import BaseModel, EmailStr
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "stickers.db"))
+DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 72
@@ -43,21 +45,16 @@ app.add_middleware(
 
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = psycopg2.connect(DATABASE_URL)
     try:
-        yield conn
-        conn.commit()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            yield cur
+            conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-
-
-def row_to_dict(row):
-    return dict(row) if row else None
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -82,10 +79,11 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     with get_db() as db:
-        row = db.execute("SELECT id, username, email, country FROM users WHERE id=?", (user_id,)).fetchone()
+        db.execute("SELECT id, username, email, country FROM users WHERE id = %s", (user_id,))
+        row = db.fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="User not found")
-    return row_to_dict(row)
+    return dict(row)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -113,18 +111,18 @@ class RespondFriendBody(BaseModel):
     accept: bool
 
 class SwapStatusBody(BaseModel):
-    status: str  # accepted | rejected | cancelled
+    status: str
 
 class WantedBody(BaseModel):
     sticker_id: int
 
 class SwapItem(BaseModel):
-    offered_sticker_id: int   # my duplicate I give
-    wanted_sticker_id: int    # their duplicate I want
+    offered_sticker_id: int
+    wanted_sticker_id: int
 
 class SwapCreateBody(BaseModel):
     receiver_id: int
-    items: list[SwapItem]     # one or more sticker pairs
+    items: list[SwapItem]
 
 
 # ── Auth routes ───────────────────────────────────────────────────────────────
@@ -132,15 +130,17 @@ class SwapCreateBody(BaseModel):
 @app.post("/api/auth/signup")
 def signup(body: SignupBody):
     with get_db() as db:
-        if db.execute("SELECT 1 FROM users WHERE username=?", (body.username,)).fetchone():
+        db.execute("SELECT 1 FROM users WHERE username = %s", (body.username,))
+        if db.fetchone():
             raise HTTPException(400, "Username already taken")
-        if db.execute("SELECT 1 FROM users WHERE email=?", (body.email,)).fetchone():
+        db.execute("SELECT 1 FROM users WHERE email = %s", (body.email,))
+        if db.fetchone():
             raise HTTPException(400, "Email already registered")
-        cur = db.execute(
-            "INSERT INTO users (username, email, password_hash, country) VALUES (?,?,?,?)",
+        db.execute(
+            "INSERT INTO users (username, email, password_hash, country) VALUES (%s,%s,%s,%s) RETURNING id",
             (body.username, body.email, hash_password(body.password), body.country),
         )
-        user_id = cur.lastrowid
+        user_id = db.fetchone()["id"]
     user = {"id": user_id, "username": body.username, "email": body.email, "country": body.country}
     return {"token": create_token(user_id), "user": user}
 
@@ -148,10 +148,11 @@ def signup(body: SignupBody):
 @app.post("/api/auth/login")
 def login(body: LoginBody):
     with get_db() as db:
-        row = db.execute(
-            "SELECT id, username, email, country, password_hash FROM users WHERE username=?",
+        db.execute(
+            "SELECT id, username, email, country, password_hash FROM users WHERE username = %s",
             (body.username,),
-        ).fetchone()
+        )
+        row = db.fetchone()
     if not row or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(401, "Invalid username or password")
     user = {"id": row["id"], "username": row["username"], "email": row["email"], "country": row["country"]}
@@ -163,25 +164,27 @@ def login(body: LoginBody):
 @app.get("/api/stickers")
 def list_stickers(me=Depends(get_current_user)):
     with get_db() as db:
-        rows = db.execute(
+        db.execute(
             "SELECT id, sticker_code, team_name, player_name, sticker_type, club "
             "FROM stickers ORDER BY team_name, sticker_num"
-        ).fetchall()
-    return [row_to_dict(r) for r in rows]
+        )
+        rows = db.fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/stickers/lookup")
 def lookup_sticker(code: str, me=Depends(get_current_user)):
     normalized = code.strip().upper()
     with get_db() as db:
-        row = db.execute(
+        db.execute(
             "SELECT id, sticker_code, team_name, player_name, sticker_type, club "
-            "FROM stickers WHERE sticker_code = ?",
+            "FROM stickers WHERE sticker_code = %s",
             (normalized,),
-        ).fetchone()
+        )
+        row = db.fetchone()
     if not row:
         raise HTTPException(404, "Sticker not found")
-    return row_to_dict(row)
+    return dict(row)
 
 
 # ── User sticker list (duplicates) ────────────────────────────────────────────
@@ -200,47 +203,58 @@ def _sticker_entry(row):
         },
     }
 
-
 LIST_QUERY = """
     SELECT us.id, us.quantity, us.sticker_id,
            s.sticker_code, s.team_name, s.player_name, s.sticker_type, s.club
     FROM user_stickers us
     JOIN stickers s ON s.id = us.sticker_id
-    WHERE us.user_id = ?
+    WHERE us.user_id = %s
     ORDER BY s.team_name, s.sticker_num
+"""
+
+LIST_BY_ID_QUERY = """
+    SELECT us.id, us.quantity, us.sticker_id,
+           s.sticker_code, s.team_name, s.player_name, s.sticker_type, s.club
+    FROM user_stickers us
+    JOIN stickers s ON s.id = us.sticker_id
+    WHERE us.user_id = %s AND us.id = %s
 """
 
 
 @app.get("/api/stickers/list")
 def get_my_list(me=Depends(get_current_user)):
     with get_db() as db:
-        rows = db.execute(LIST_QUERY, (me["id"],)).fetchall()
+        db.execute(LIST_QUERY, (me["id"],))
+        rows = db.fetchall()
     return [_sticker_entry(r) for r in rows]
 
 
 @app.post("/api/stickers/list", status_code=201)
 def add_to_list(body: AddStickerBody, me=Depends(get_current_user)):
     with get_db() as db:
-        if not db.execute("SELECT 1 FROM stickers WHERE id=?", (body.sticker_id,)).fetchone():
+        db.execute("SELECT 1 FROM stickers WHERE id = %s", (body.sticker_id,))
+        if not db.fetchone():
             raise HTTPException(404, "Sticker not found")
-        existing = db.execute(
-            "SELECT id, quantity FROM user_stickers WHERE user_id=? AND sticker_id=?",
+        db.execute(
+            "SELECT id, quantity FROM user_stickers WHERE user_id = %s AND sticker_id = %s",
             (me["id"], body.sticker_id),
-        ).fetchone()
+        )
+        existing = db.fetchone()
         if existing:
             new_qty = existing["quantity"] + 1
             db.execute(
-                "UPDATE user_stickers SET quantity=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                "UPDATE user_stickers SET quantity = %s, updated_at = NOW() WHERE id = %s",
                 (new_qty, existing["id"]),
             )
             entry_id = existing["id"]
         else:
-            cur = db.execute(
-                "INSERT INTO user_stickers (user_id, sticker_id, quantity) VALUES (?,?,1)",
+            db.execute(
+                "INSERT INTO user_stickers (user_id, sticker_id, quantity) VALUES (%s,%s,1) RETURNING id",
                 (me["id"], body.sticker_id),
             )
-            entry_id = cur.lastrowid
-        row = db.execute(LIST_QUERY + " AND us.id=?", (me["id"], entry_id)).fetchone()
+            entry_id = db.fetchone()["id"]
+        db.execute(LIST_BY_ID_QUERY, (me["id"], entry_id))
+        row = db.fetchone()
     return _sticker_entry(row)
 
 
@@ -249,13 +263,13 @@ def update_qty(entry_id: int, body: UpdateQtyBody, me=Depends(get_current_user))
     if body.quantity < 1:
         raise HTTPException(400, "Quantity must be at least 1")
     with get_db() as db:
-        row = db.execute(
-            "SELECT id FROM user_stickers WHERE id=? AND user_id=?", (entry_id, me["id"])
-        ).fetchone()
-        if not row:
+        db.execute(
+            "SELECT id FROM user_stickers WHERE id = %s AND user_id = %s", (entry_id, me["id"])
+        )
+        if not db.fetchone():
             raise HTTPException(404, "Entry not found")
         db.execute(
-            "UPDATE user_stickers SET quantity=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE user_stickers SET quantity = %s, updated_at = NOW() WHERE id = %s",
             (body.quantity, entry_id),
         )
     return {"ok": True}
@@ -264,12 +278,12 @@ def update_qty(entry_id: int, body: UpdateQtyBody, me=Depends(get_current_user))
 @app.delete("/api/stickers/list/{entry_id}", status_code=204)
 def remove_from_list(entry_id: int, me=Depends(get_current_user)):
     with get_db() as db:
-        row = db.execute(
-            "SELECT id FROM user_stickers WHERE id=? AND user_id=?", (entry_id, me["id"])
-        ).fetchone()
-        if not row:
+        db.execute(
+            "SELECT id FROM user_stickers WHERE id = %s AND user_id = %s", (entry_id, me["id"])
+        )
+        if not db.fetchone():
             raise HTTPException(404, "Entry not found")
-        db.execute("DELETE FROM user_stickers WHERE id=?", (entry_id,))
+        db.execute("DELETE FROM user_stickers WHERE id = %s", (entry_id,))
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -277,44 +291,43 @@ def remove_from_list(entry_id: int, me=Depends(get_current_user)):
 @app.get("/api/users/search")
 def search_user(username: str, me=Depends(get_current_user)):
     with get_db() as db:
-        row = db.execute(
-            "SELECT id, username, country FROM users WHERE username=? AND id!=?",
+        db.execute(
+            "SELECT id, username, country FROM users WHERE username = %s AND id != %s",
             (username, me["id"]),
-        ).fetchone()
+        )
+        row = db.fetchone()
     if not row:
         raise HTTPException(404, "User not found")
-    return row_to_dict(row)
+    return dict(row)
 
 
 # ── Friends ───────────────────────────────────────────────────────────────────
 
-def _friends_of(db, user_id):
-    rows = db.execute("""
-        SELECT u.id, u.username, u.country,
-               (SELECT COUNT(*) FROM user_stickers us WHERE us.user_id = u.id) AS duplicate_count
-        FROM friendships f
-        JOIN users u ON u.id = CASE WHEN f.requester_id=? THEN f.receiver_id ELSE f.requester_id END
-        WHERE (f.requester_id=? OR f.receiver_id=?) AND f.status='accepted'
-    """, (user_id, user_id, user_id)).fetchall()
-    return [row_to_dict(r) for r in rows]
-
-
 @app.get("/api/friends")
 def get_friends(me=Depends(get_current_user)):
     with get_db() as db:
-        return _friends_of(db, me["id"])
+        db.execute("""
+            SELECT u.id, u.username, u.country,
+                   (SELECT COUNT(*) FROM user_stickers us WHERE us.user_id = u.id) AS duplicate_count
+            FROM friendships f
+            JOIN users u ON u.id = CASE WHEN f.requester_id = %s THEN f.receiver_id ELSE f.requester_id END
+            WHERE (f.requester_id = %s OR f.receiver_id = %s) AND f.status = 'accepted'
+        """, (me["id"], me["id"], me["id"]))
+        rows = db.fetchall()
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/friends/requests")
 def get_friend_requests(me=Depends(get_current_user)):
     with get_db() as db:
-        rows = db.execute("""
+        db.execute("""
             SELECT f.id, f.created_at,
                    u.id as req_id, u.username as req_username, u.country as req_country
             FROM friendships f
             JOIN users u ON u.id = f.requester_id
-            WHERE f.receiver_id=? AND f.status='pending'
-        """, (me["id"],)).fetchall()
+            WHERE f.receiver_id = %s AND f.status = 'pending'
+        """, (me["id"],))
+        rows = db.fetchall()
     return [
         {
             "id": r["id"],
@@ -330,16 +343,17 @@ def send_friend_request(body: FriendRequestBody, me=Depends(get_current_user)):
     if body.user_id == me["id"]:
         raise HTTPException(400, "Cannot add yourself")
     with get_db() as db:
-        if not db.execute("SELECT 1 FROM users WHERE id=?", (body.user_id,)).fetchone():
+        db.execute("SELECT 1 FROM users WHERE id = %s", (body.user_id,))
+        if not db.fetchone():
             raise HTTPException(404, "User not found")
-        existing = db.execute("""
+        db.execute("""
             SELECT 1 FROM friendships
-            WHERE (requester_id=? AND receiver_id=?) OR (requester_id=? AND receiver_id=?)
-        """, (me["id"], body.user_id, body.user_id, me["id"])).fetchone()
-        if existing:
+            WHERE (requester_id = %s AND receiver_id = %s) OR (requester_id = %s AND receiver_id = %s)
+        """, (me["id"], body.user_id, body.user_id, me["id"]))
+        if db.fetchone():
             raise HTTPException(409, "Friend request already exists")
         db.execute(
-            "INSERT INTO friendships (requester_id, receiver_id) VALUES (?,?)",
+            "INSERT INTO friendships (requester_id, receiver_id) VALUES (%s, %s)",
             (me["id"], body.user_id),
         )
     return {"ok": True}
@@ -348,15 +362,15 @@ def send_friend_request(body: FriendRequestBody, me=Depends(get_current_user)):
 @app.patch("/api/friends/request/{friendship_id}")
 def respond_friend_request(friendship_id: int, body: RespondFriendBody, me=Depends(get_current_user)):
     with get_db() as db:
-        row = db.execute(
-            "SELECT id FROM friendships WHERE id=? AND receiver_id=? AND status='pending'",
+        db.execute(
+            "SELECT id FROM friendships WHERE id = %s AND receiver_id = %s AND status = 'pending'",
             (friendship_id, me["id"]),
-        ).fetchone()
-        if not row:
+        )
+        if not db.fetchone():
             raise HTTPException(404, "Request not found")
         new_status = "accepted" if body.accept else "rejected"
         db.execute(
-            "UPDATE friendships SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE friendships SET status = %s, updated_at = NOW() WHERE id = %s",
             (new_status, friendship_id),
         )
     return {"ok": True}
@@ -369,8 +383,16 @@ WANTED_QUERY = """
            s.player_name, s.sticker_type, s.club
     FROM user_wanted_stickers uw
     JOIN stickers s ON s.id = uw.sticker_id
-    WHERE uw.user_id = ?
+    WHERE uw.user_id = %s
     ORDER BY s.team_name, s.sticker_num
+"""
+
+WANTED_BY_ID_QUERY = """
+    SELECT uw.id, s.id as sticker_id, s.sticker_code, s.team_name,
+           s.player_name, s.sticker_type, s.club
+    FROM user_wanted_stickers uw
+    JOIN stickers s ON s.id = uw.sticker_id
+    WHERE uw.user_id = %s AND uw.id = %s
 """
 
 def _wanted_entry(r):
@@ -383,52 +405,63 @@ def _wanted_entry(r):
         },
     }
 
+
 @app.get("/api/stickers/wanted")
 def get_wanted(me=Depends(get_current_user)):
     with get_db() as db:
-        rows = db.execute(WANTED_QUERY, (me["id"],)).fetchall()
+        db.execute(WANTED_QUERY, (me["id"],))
+        rows = db.fetchall()
     return [_wanted_entry(r) for r in rows]
+
 
 @app.post("/api/stickers/wanted", status_code=201)
 def add_wanted(body: WantedBody, me=Depends(get_current_user)):
     with get_db() as db:
-        if not db.execute("SELECT 1 FROM stickers WHERE id=?", (body.sticker_id,)).fetchone():
+        db.execute("SELECT 1 FROM stickers WHERE id = %s", (body.sticker_id,))
+        if not db.fetchone():
             raise HTTPException(404, "Sticker not found")
         try:
-            cur = db.execute(
-                "INSERT INTO user_wanted_stickers (user_id, sticker_id) VALUES (?,?)",
+            db.execute(
+                "INSERT INTO user_wanted_stickers (user_id, sticker_id) VALUES (%s, %s) RETURNING id",
                 (me["id"], body.sticker_id),
             )
-            row = db.execute(WANTED_QUERY + " AND uw.id=?", (me["id"], cur.lastrowid)).fetchone()
-        except Exception:
+            entry_id = db.fetchone()["id"]
+            db.execute(WANTED_BY_ID_QUERY, (me["id"], entry_id))
+            row = db.fetchone()
+        except psycopg2.errors.UniqueViolation:
             raise HTTPException(409, "Already in wanted list")
     return _wanted_entry(row)
+
 
 @app.delete("/api/stickers/wanted/{entry_id}", status_code=204)
 def remove_wanted(entry_id: int, me=Depends(get_current_user)):
     with get_db() as db:
-        if not db.execute(
-            "SELECT 1 FROM user_wanted_stickers WHERE id=? AND user_id=?", (entry_id, me["id"])
-        ).fetchone():
+        db.execute(
+            "SELECT 1 FROM user_wanted_stickers WHERE id = %s AND user_id = %s", (entry_id, me["id"])
+        )
+        if not db.fetchone():
             raise HTTPException(404, "Entry not found")
-        db.execute("DELETE FROM user_wanted_stickers WHERE id=?", (entry_id,))
+        db.execute("DELETE FROM user_wanted_stickers WHERE id = %s", (entry_id,))
 
+
+# ── Friend stickers ───────────────────────────────────────────────────────────
 
 @app.get("/api/friends/{friend_id}/stickers")
 def get_friend_stickers(friend_id: int, me=Depends(get_current_user)):
     with get_db() as db:
-        is_friend = db.execute("""
+        db.execute("""
             SELECT 1 FROM friendships
-            WHERE ((requester_id=? AND receiver_id=?) OR (requester_id=? AND receiver_id=?))
-              AND status='accepted'
-        """, (me["id"], friend_id, friend_id, me["id"])).fetchone()
-        if not is_friend:
+            WHERE ((requester_id = %s AND receiver_id = %s) OR (requester_id = %s AND receiver_id = %s))
+              AND status = 'accepted'
+        """, (me["id"], friend_id, friend_id, me["id"]))
+        if not db.fetchone():
             raise HTTPException(403, "Not friends with this user")
-        rows = db.execute(LIST_QUERY, (friend_id,)).fetchall()
-        # Which of their stickers am I currently wanting?
-        wanted_ids = {r[0] for r in db.execute(
-            "SELECT sticker_id FROM user_wanted_stickers WHERE user_id=?", (me["id"],)
-        ).fetchall()}
+        db.execute(LIST_QUERY, (friend_id,))
+        rows = db.fetchall()
+        db.execute(
+            "SELECT sticker_id FROM user_wanted_stickers WHERE user_id = %s", (me["id"],)
+        )
+        wanted_ids = {r["sticker_id"] for r in db.fetchall()}
     entries = [_sticker_entry(r) for r in rows]
     for e in entries:
         e["i_want"] = e["sticker"]["id"] in wanted_ids
@@ -437,25 +470,35 @@ def get_friend_stickers(friend_id: int, me=Depends(get_current_user)):
 
 # ── Swaps ─────────────────────────────────────────────────────────────────────
 
-SWAP_QUERY = """
+SWAP_LIST_QUERY = """
     SELECT sr.id, sr.offerer_id, sr.receiver_id, sr.status, sr.created_at,
            o.id as o_id, o.username as o_username,
            r.id as r_id, r.username as r_username
     FROM swap_requests sr
     JOIN users o ON o.id = sr.offerer_id
     JOIN users r ON r.id = sr.receiver_id
-    WHERE sr.offerer_id=? OR sr.receiver_id=?
+    WHERE sr.offerer_id = %s OR sr.receiver_id = %s
     ORDER BY sr.created_at DESC
 """
 
+SWAP_ONE_QUERY = """
+    SELECT sr.id, sr.offerer_id, sr.receiver_id, sr.status, sr.created_at,
+           o.id as o_id, o.username as o_username,
+           r.id as r_id, r.username as r_username
+    FROM swap_requests sr
+    JOIN users o ON o.id = sr.offerer_id
+    JOIN users r ON r.id = sr.receiver_id
+    WHERE sr.id = %s
+"""
+
 SWAP_ITEMS_QUERY = """
-    SELECT si.id, si.swap_id,
+    SELECT si.id,
            os.id as os_id, os.sticker_code as os_code, os.player_name as os_player, os.team_name as os_team,
            ws.id as ws_id, ws.sticker_code as ws_code, ws.player_name as ws_player, ws.team_name as ws_team
     FROM swap_items si
     JOIN stickers os ON os.id = si.offered_sticker_id
     JOIN stickers ws ON ws.id = si.wanted_sticker_id
-    WHERE si.swap_id = ?
+    WHERE si.swap_id = %s
 """
 
 
@@ -482,10 +525,12 @@ def _format_swap(r, items):
 @app.get("/api/swaps")
 def get_swaps(me=Depends(get_current_user)):
     with get_db() as db:
-        rows = db.execute(SWAP_QUERY, (me["id"], me["id"])).fetchall()
+        db.execute(SWAP_LIST_QUERY, (me["id"], me["id"]))
+        rows = db.fetchall()
         result = []
         for r in rows:
-            items = db.execute(SWAP_ITEMS_QUERY, (r["id"],)).fetchall()
+            db.execute(SWAP_ITEMS_QUERY, (r["id"],))
+            items = db.fetchall()
             result.append(_format_swap(r, items))
     return result
 
@@ -497,42 +542,42 @@ def create_swap(body: SwapCreateBody, me=Depends(get_current_user)):
     if body.receiver_id == me["id"]:
         raise HTTPException(400, "Cannot swap with yourself")
     with get_db() as db:
-        # Must be friends
-        is_friend = db.execute("""
+        db.execute("""
             SELECT 1 FROM friendships
-            WHERE ((requester_id=? AND receiver_id=?) OR (requester_id=? AND receiver_id=?))
-              AND status='accepted'
-        """, (me["id"], body.receiver_id, body.receiver_id, me["id"])).fetchone()
-        if not is_friend:
+            WHERE ((requester_id = %s AND receiver_id = %s) OR (requester_id = %s AND receiver_id = %s))
+              AND status = 'accepted'
+        """, (me["id"], body.receiver_id, body.receiver_id, me["id"]))
+        if not db.fetchone():
             raise HTTPException(403, "Not friends with this user")
 
-        # Validate each item
-        for item in body.items:
-            if not db.execute(
-                "SELECT 1 FROM user_stickers WHERE user_id=? AND sticker_id=?",
-                (me["id"], item.offered_sticker_id)
-            ).fetchone():
-                raise HTTPException(400, f"You don't have sticker {item.offered_sticker_id} as a duplicate")
-            if not db.execute(
-                "SELECT 1 FROM user_stickers WHERE user_id=? AND sticker_id=?",
-                (body.receiver_id, item.wanted_sticker_id)
-            ).fetchone():
-                raise HTTPException(400, f"Friend doesn't have sticker {item.wanted_sticker_id} as a duplicate")
-
-        cur = db.execute(
-            "INSERT INTO swap_requests (offerer_id, receiver_id) VALUES (?,?)",
-            (me["id"], body.receiver_id),
-        )
-        swap_id = cur.lastrowid
         for item in body.items:
             db.execute(
-                "INSERT INTO swap_items (swap_id, offered_sticker_id, wanted_sticker_id) VALUES (?,?,?)",
+                "SELECT 1 FROM user_stickers WHERE user_id = %s AND sticker_id = %s",
+                (me["id"], item.offered_sticker_id)
+            )
+            if not db.fetchone():
+                raise HTTPException(400, f"You don't have sticker {item.offered_sticker_id} as a duplicate")
+            db.execute(
+                "SELECT 1 FROM user_stickers WHERE user_id = %s AND sticker_id = %s",
+                (body.receiver_id, item.wanted_sticker_id)
+            )
+            if not db.fetchone():
+                raise HTTPException(400, f"Friend doesn't have sticker {item.wanted_sticker_id} as a duplicate")
+
+        db.execute(
+            "INSERT INTO swap_requests (offerer_id, receiver_id) VALUES (%s, %s) RETURNING id",
+            (me["id"], body.receiver_id),
+        )
+        swap_id = db.fetchone()["id"]
+        for item in body.items:
+            db.execute(
+                "INSERT INTO swap_items (swap_id, offered_sticker_id, wanted_sticker_id) VALUES (%s, %s, %s)",
                 (swap_id, item.offered_sticker_id, item.wanted_sticker_id),
             )
-        row = db.execute(SWAP_QUERY.replace(
-            "WHERE sr.offerer_id=? OR sr.receiver_id=?", "WHERE sr.id=?"
-        ), (swap_id,)).fetchone()
-        items = db.execute(SWAP_ITEMS_QUERY, (swap_id,)).fetchall()
+        db.execute(SWAP_ONE_QUERY, (swap_id,))
+        row = db.fetchone()
+        db.execute(SWAP_ITEMS_QUERY, (swap_id,))
+        items = db.fetchall()
     return _format_swap(row, items)
 
 
@@ -541,10 +586,10 @@ def update_swap(swap_id: int, body: SwapStatusBody, me=Depends(get_current_user)
     if body.status not in ("accepted", "rejected", "cancelled"):
         raise HTTPException(400, "Invalid status")
     with get_db() as db:
-        row = db.execute(
-            "SELECT offerer_id, receiver_id, status FROM swap_requests WHERE id=?",
-            (swap_id,),
-        ).fetchone()
+        db.execute(
+            "SELECT offerer_id, receiver_id, status FROM swap_requests WHERE id = %s", (swap_id,)
+        )
+        row = db.fetchone()
         if not row:
             raise HTTPException(404, "Swap not found")
         if row["status"] != "pending":
@@ -554,7 +599,7 @@ def update_swap(swap_id: int, body: SwapStatusBody, me=Depends(get_current_user)
         if body.status == "cancelled" and row["offerer_id"] != me["id"]:
             raise HTTPException(403, "Only the offerer can cancel")
         db.execute(
-            "UPDATE swap_requests SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE swap_requests SET status = %s, updated_at = NOW() WHERE id = %s",
             (body.status, swap_id),
         )
     return {"ok": True}
@@ -563,15 +608,7 @@ def update_swap(swap_id: int, body: SwapStatusBody, me=Depends(get_current_user)
 # ── Scan ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/scan")
-async def scan_sticker(
-    image: UploadFile = File(...),
-    me=Depends(get_current_user),
-):
-    """
-    Accept a JPEG/PNG image of a sticker back, run OCR, return matched sticker(s).
-    Response shape:
-      { status: "match"|"candidates"|"no_match", match: sticker|null, candidates: sticker[] }
-    """
+async def scan_sticker(image: UploadFile = File(...), me=Depends(get_current_user)):
     if image.content_type not in ("image/jpeg", "image/png", "image/webp"):
         raise HTTPException(415, "Unsupported image type — send JPEG, PNG or WebP")
     raw_bytes = await image.read()

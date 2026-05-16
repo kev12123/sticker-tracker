@@ -1,11 +1,11 @@
--- Panini World Cup 2026 Sticker Tracker
+-- Panini World Cup 2026 Sticker Tracker — PostgreSQL schema
 
-PRAGMA foreign_keys = ON;
+CREATE EXTENSION IF NOT EXISTS citext;  -- case-insensitive text for username/email
 
 -- ─── Sticker Catalogue ───────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS stickers (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     sticker_code  TEXT NOT NULL UNIQUE,
     team_slug     TEXT NOT NULL,
     team_name     TEXT NOT NULL,
@@ -18,72 +18,67 @@ CREATE TABLE IF NOT EXISTS stickers (
 -- ─── Users ───────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS users (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    username     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-    email        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    id            SERIAL PRIMARY KEY,
+    username      CITEXT NOT NULL UNIQUE,
+    email         CITEXT NOT NULL UNIQUE,
     password_hash TEXT   NOT NULL,
-    country      TEXT,
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+    country       TEXT,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ─── Duplicate Sticker List ───────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS user_stickers (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sticker_id  INTEGER NOT NULL REFERENCES stickers(id),
     quantity    INTEGER NOT NULL DEFAULT 1 CHECK(quantity >= 1),
-    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    added_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, sticker_id)
 );
 
 -- ─── Wanted / Wishlist ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS user_wanted_stickers (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     sticker_id  INTEGER NOT NULL REFERENCES stickers(id),
-    added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    added_at    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, sticker_id)
 );
 
 -- ─── Friendships ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS friendships (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     requester_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     receiver_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status        TEXT    NOT NULL DEFAULT 'pending'
-                          CHECK(status IN ('pending', 'accepted', 'blocked')),
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status        TEXT NOT NULL DEFAULT 'pending'
+                       CHECK(status IN ('pending', 'accepted', 'blocked')),
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(requester_id, receiver_id),
     CHECK(requester_id != receiver_id)
 );
 
 -- ─── Swap Requests ────────────────────────────────────────────────────────────
--- Header: who is swapping with whom, and overall status.
--- The actual sticker pairs live in swap_items.
 
 CREATE TABLE IF NOT EXISTS swap_requests (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            SERIAL PRIMARY KEY,
     offerer_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     receiver_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     status        TEXT NOT NULL DEFAULT 'pending'
-                        CHECK(status IN ('pending', 'accepted', 'rejected', 'cancelled')),
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                       CHECK(status IN ('pending', 'accepted', 'rejected', 'cancelled')),
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW(),
     CHECK(offerer_id != receiver_id)
 );
 
 -- ─── Swap Items ───────────────────────────────────────────────────────────────
--- Each row is one sticker pair in a swap bundle.
--- offered_sticker_id = what the offerer gives
--- wanted_sticker_id  = what the offerer receives (receiver's duplicate)
 
 CREATE TABLE IF NOT EXISTS swap_items (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                  SERIAL PRIMARY KEY,
     swap_id             INTEGER NOT NULL REFERENCES swap_requests(id) ON DELETE CASCADE,
     offered_sticker_id  INTEGER NOT NULL REFERENCES stickers(id),
     wanted_sticker_id   INTEGER NOT NULL REFERENCES stickers(id)
@@ -97,7 +92,6 @@ CREATE INDEX IF NOT EXISTS idx_wanted_user           ON user_wanted_stickers(use
 CREATE INDEX IF NOT EXISTS idx_wanted_sticker        ON user_wanted_stickers(sticker_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_receiver  ON friendships(receiver_id);
-CREATE INDEX IF NOT EXISTS idx_friendships_status    ON friendships(status);
 CREATE INDEX IF NOT EXISTS idx_swaps_offerer         ON swap_requests(offerer_id);
 CREATE INDEX IF NOT EXISTS idx_swaps_receiver        ON swap_requests(receiver_id);
 CREATE INDEX IF NOT EXISTS idx_swap_items_swap       ON swap_items(swap_id);
