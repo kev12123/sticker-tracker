@@ -10,12 +10,21 @@ const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 function SwapProposalModal({ friend, matches, onClose, onSent }) {
   const [myDupes, setMyDupes] = useState([])
+  const [committedIds, setCommittedIds] = useState(new Set())
   const [pairs, setPairs] = useState(matches.map(m => ({ wanted: m, offeredId: null })))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     api.get('/stickers/list').then(res => setMyDupes(res.data)).catch(() => {})
+    const me = JSON.parse(localStorage.getItem('user') || '{}')
+    api.get('/swaps').then(res => {
+      const ids = new Set()
+      res.data
+        .filter(s => s.status === 'pending' && s.offerer_id === me.id)
+        .forEach(s => s.items.forEach(i => ids.add(i.offered_sticker.id)))
+      setCommittedIds(ids)
+    }).catch(() => {})
   }, [])
 
   function toggleWanted(entry) {
@@ -89,11 +98,14 @@ function SwapProposalModal({ friend, matches, onClose, onSent }) {
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
                       <option value="">— pick one of your duplicates —</option>
-                      {myDupes.map(d => (
-                        <option key={d.sticker.id} value={d.sticker.id}>
-                          {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity})
-                        </option>
-                      ))}
+                      {myDupes.map(d => {
+                        const locked = committedIds.has(d.sticker.id)
+                        return (
+                          <option key={d.sticker.id} value={d.sticker.id} disabled={locked}>
+                            {d.sticker.sticker_code} · {d.sticker.player_name || d.sticker.team_name} (×{d.quantity}){locked ? ' — in pending swap' : ''}
+                          </option>
+                        )
+                      })}
                     </select>
                   </div>
                 )}

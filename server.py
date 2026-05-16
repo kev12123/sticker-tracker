@@ -565,6 +565,9 @@ def create_swap(body: SwapCreateBody, me=Depends(get_current_user)):
         if not db.fetchone():
             raise HTTPException(403, "Not friends with this user")
 
+        offered_ids = [item.offered_sticker_id for item in body.items]
+        wanted_ids  = [item.wanted_sticker_id  for item in body.items]
+
         for item in body.items:
             db.execute(
                 "SELECT 1 FROM user_stickers WHERE user_id = %s AND sticker_id = %s",
@@ -578,6 +581,32 @@ def create_swap(body: SwapCreateBody, me=Depends(get_current_user)):
             )
             if not db.fetchone():
                 raise HTTPException(400, f"Friend doesn't have sticker {item.wanted_sticker_id} as a duplicate")
+
+        # Ensure none of the offered stickers are already locked in a pending swap
+        db.execute("""
+            SELECT s.sticker_code FROM swap_items si
+            JOIN swap_requests sr ON sr.id = si.swap_id
+            JOIN stickers s ON s.id = si.offered_sticker_id
+            WHERE sr.offerer_id = %s AND sr.status = 'pending'
+              AND si.offered_sticker_id = ANY(%s)
+        """, (me["id"], offered_ids))
+        locked = db.fetchall()
+        if locked:
+            codes = ", ".join(r["sticker_code"] for r in locked)
+            raise HTTPException(409, f"Already in a pending swap: {codes}")
+
+        # Ensure none of the wanted stickers are already offered by the receiver in a pending swap
+        db.execute("""
+            SELECT s.sticker_code FROM swap_items si
+            JOIN swap_requests sr ON sr.id = si.swap_id
+            JOIN stickers s ON s.id = si.offered_sticker_id
+            WHERE sr.offerer_id = %s AND sr.status = 'pending'
+              AND si.offered_sticker_id = ANY(%s)
+        """, (body.receiver_id, wanted_ids))
+        locked = db.fetchall()
+        if locked:
+            codes = ", ".join(r["sticker_code"] for r in locked)
+            raise HTTPException(409, f"Friend's sticker(s) already committed to another swap: {codes}")
 
         db.execute(
             "INSERT INTO swap_requests (offerer_id, receiver_id) VALUES (%s, %s) RETURNING id",
