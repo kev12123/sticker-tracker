@@ -159,11 +159,7 @@ export default function ProfilePage() {
             <div className="overflow-y-auto flex-1 p-2">
               <StickerScanner
                 key={scanKey}
-                onAdded={() => {
-                  setScanKey(k => k + 1)
-                  setScanOpen(false)
-                  setTab('stickers')
-                }}
+                onAdded={() => setScanKey(k => k + 1)}
               />
             </div>
           </div>
