@@ -108,11 +108,11 @@ export default function ProfilePage() {
         <div className="h-24" />
       </div>
 
-      {/* Desktop floating scan button — hidden on Wanted tab */}
+      {/* Desktop floating scan button — shown on Dupes and Wanted tabs */}
       <button
         onClick={() => setScanOpen(true)}
         style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-        className={`fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40 ${tab === 'stickers' ? 'hidden sm:flex' : 'hidden'}`}
+        className={`fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40 ${(tab === 'stickers' || tab === 'wanted') ? 'hidden sm:flex' : 'hidden'}`}
         title="Scan a sticker"
       >
         📷
@@ -128,10 +128,10 @@ export default function ProfilePage() {
           <MobileNavItem tab={TABS[1]} active={tab} onClick={setTab} />
           {/* Scan button */}
           <button
-            onClick={() => tab === 'stickers' && setScanOpen(true)}
+            onClick={() => (tab === 'stickers' || tab === 'wanted') && setScanOpen(true)}
             className="flex-1 flex flex-col items-center pb-2 -mt-1"
           >
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl shadow-lg ring-4 ring-white -mt-5 transition-all active:scale-95 ${tab === 'stickers' ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800' : 'bg-gray-300'}`}>
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl shadow-lg ring-4 ring-white -mt-5 transition-all active:scale-95 ${(tab === 'stickers' || tab === 'wanted') ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800' : 'bg-gray-300'}`}>
               📷
             </div>
             <span className="text-[10px] font-semibold text-gray-400 mt-1">Scan</span>
@@ -150,7 +150,9 @@ export default function ProfilePage() {
           <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col"
                style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}>
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
-              <h3 className="font-bold text-gray-800 text-lg">Scan Sticker</h3>
+              <h3 className="font-bold text-gray-800 text-lg">
+                {tab === 'wanted' ? 'Scan to Wanted List' : 'Scan Sticker'}
+              </h3>
               <button
                 onClick={() => setScanOpen(false)}
                 className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 font-bold transition-colors"
@@ -158,6 +160,7 @@ export default function ProfilePage() {
             </div>
             <div className="overflow-y-auto flex-1 p-2">
               <StickerScanner
+                mode={tab === 'wanted' ? 'wanted' : 'duplicates'}
                 onAdded={() => setListRefresh(k => k + 1)}
               />
             </div>

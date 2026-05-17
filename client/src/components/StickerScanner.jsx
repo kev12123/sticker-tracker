@@ -51,7 +51,7 @@ function StickerResult({ sticker, quantity }) {
   )
 }
 
-export default function StickerScanner({ onAdded }) {
+export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
@@ -153,7 +153,11 @@ export default function StickerScanner({ onAdded }) {
   async function addToList() {
     if (!selected) return
     try {
-      await api.post('/stickers/list', { sticker_id: selected.id })
+      if (mode === 'wanted') {
+        await api.post('/stickers/wanted', { sticker_id: selected.id })
+      } else {
+        await api.post('/stickers/list', { sticker_id: selected.id })
+      }
       onAdded?.()
       setResult(null)
       setSelected(null)
@@ -283,7 +287,7 @@ export default function StickerScanner({ onAdded }) {
               onClick={addToList}
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl transition-colors"
             >
-              Add to My List
+              {mode === 'wanted' ? 'Add to Wanted' : 'Add to Duplicates'}
             </button>
             <button
               onClick={() => setState(STATES.CAMERA)}
