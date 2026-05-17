@@ -64,6 +64,7 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
   const [facingMode, setFacingMode] = useState('environment') // rear camera default
   const [manualCode, setManualCode] = useState('')
   const [manualError, setManualError] = useState('')
+  const [wantedEntry, setWantedEntry] = useState(null) // {id, sticker} if scanned sticker is in wanted list
 
   // Start camera — attach stream directly so video element never needs remounting
   const startCamera = useCallback(async () => {
@@ -122,6 +123,7 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
 
         if (data.status === 'match') {
           await checkExisting(data.match.id)
+          if (mode === 'wanted') await checkWanted(data.match.id)
           setSelected(data.match)
           setState(STATES.MATCH)
         } else if (data.status === 'candidates') {
@@ -144,9 +146,18 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
     } catch { /* non-critical */ }
   }
 
+  async function checkWanted(stickerId) {
+    try {
+      const { data } = await api.get('/stickers/wanted')
+      const entry = data.find(e => e.sticker.id === stickerId)
+      setWantedEntry(entry ?? null)
+    } catch { /* non-critical */ }
+  }
+
   async function selectCandidate(sticker) {
     setSelected(sticker)
     await checkExisting(sticker.id)
+    if (mode === 'wanted') await checkWanted(sticker.id)
     setState(STATES.MATCH)
   }
 
@@ -169,6 +180,22 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
     }
   }
 
+  async function removeFromWanted() {
+    if (!wantedEntry) return
+    try {
+      await api.delete(`/stickers/wanted/${wantedEntry.id}`)
+      onAdded?.()
+      setResult(null)
+      setSelected(null)
+      setExistingQty(0)
+      setWantedEntry(null)
+      setState(STATES.CAMERA)
+    } catch (err) {
+      setErrorMsg(err.response?.data?.detail || 'Failed to remove sticker')
+      setState(STATES.ERROR)
+    }
+  }
+
   async function lookupManual() {
     const code = manualCode.trim().toUpperCase()
     if (!code) return
@@ -176,6 +203,7 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
     try {
       const { data } = await api.get('/stickers/lookup', { params: { code } })
       await checkExisting(data.id)
+      if (mode === 'wanted') await checkWanted(data.id)
       setSelected(data)
       setState(STATES.MATCH)
     } catch {
@@ -187,6 +215,7 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
     setResult(null)
     setSelected(null)
     setExistingQty(0)
+    setWantedEntry(null)
     setErrorMsg('')
     setManualCode('')
     setManualError('')
@@ -280,15 +309,38 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
           <div className="text-center">
             <span className="text-2xl">✅</span>
             <p className="font-semibold text-gray-700 mt-1">Sticker identified!</p>
+            {mode === 'wanted' && (
+              <span className={`inline-block mt-2 text-xs font-semibold px-3 py-1 rounded-full ${wantedEntry ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                {wantedEntry ? '✓ In your wanted list' : 'Not in your wanted list'}
+              </span>
+            )}
           </div>
           <StickerResult sticker={selected} quantity={existingQty} />
           <div className="flex gap-3 max-w-sm mx-auto">
-            <button
-              onClick={addToList}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl transition-colors"
-            >
-              {mode === 'wanted' ? 'Add to Wanted' : 'Add to Duplicates'}
-            </button>
+            {mode === 'wanted' ? (
+              wantedEntry ? (
+                <button
+                  onClick={removeFromWanted}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 rounded-2xl transition-colors"
+                >
+                  Remove from Wanted
+                </button>
+              ) : (
+                <button
+                  onClick={addToList}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl transition-colors"
+                >
+                  Add to Wanted
+                </button>
+              )
+            ) : (
+              <button
+                onClick={addToList}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-2xl transition-colors"
+              >
+                Add to Duplicates
+              </button>
+            )}
             <button
               onClick={() => setState(STATES.CAMERA)}
               className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium rounded-2xl transition-colors"
@@ -296,7 +348,7 @@ export default function StickerScanner({ onAdded, mode = 'duplicates' }) {
               Cancel
             </button>
           </div>
-          {existingQty > 0 && (
+          {existingQty > 0 && mode !== 'wanted' && (
             <p className="text-center text-xs text-amber-500">
               You already have {existingQty} of this sticker — adding another duplicate
             </p>
