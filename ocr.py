@@ -88,9 +88,11 @@ def _ocr_claude(image: Image.Image) -> list[str]:
                         "This is the back of a Panini FIFA World Cup 2026 sticker. "
                         "There is a dark rounded badge in the top-right corner containing "
                         "the sticker code: 2-3 capital letters (country code) then a space then 1-2 digits (1-20), "
-                        "e.g. 'ARG 17', 'RSA 6', 'CZE 6', 'FWC 1'. "
-                        "Important: in the dark badge, the digit 6 can look like G, 0 like O, 1 like I, 8 like B. "
-                        "Always output a digit for the number part — never a letter. "
+                        "e.g. 'ARG 17', 'RSA 6', 'CZE 6', 'IRQ 15', 'FWC 1'. "
+                        "Important: the country code is always letters, never digits — "
+                        "if you see what looks like a 1 at the start, it is the letter I (as in IRQ for Iraq). "
+                        "In the dark badge, 6 can look like G, 0 like O, 1 like I, 8 like B — "
+                        "always output a digit for the number part and a letter for the country code. "
                         "Reply with ONLY the sticker code, nothing else. "
                         "If you genuinely cannot read it, reply with UNKNOWN."
                     ),
@@ -201,6 +203,13 @@ def _parse_candidates(raw: str) -> list[str]:
     for c, n in re.findall(r'\b([A-Z]{2,3})\s*(\d{1,2})\b', normalized):
         _add(f"{c} {n}")
 
+    # Catch digit-as-letter in the country prefix (e.g. "1RQ 15" → "IRQ 15" when I is read as 1)
+    _DIGIT_AS_LETTER = {"1": "I", "0": "O", "8": "B"}
+    for c, n in re.findall(r'\b([A-Z0-9]{2,3})\s*(\d{1,2})\b', normalized):
+        if not c.isalpha() and any(ch in _DIGIT_AS_LETTER for ch in c):
+            corrected = ''.join(_DIGIT_AS_LETTER.get(ch, ch) for ch in c)
+            _add(f"{corrected} {n}")
+
     # Catch letter-as-single-digit (e.g. "RSAG" → "RSA 6" when bold font confuses Tesseract)
     for c, letter in re.findall(r'\b([A-Z]{2,3})\s*([GOBIZ])\b', normalized):
         if letter in _LETTER_AS_DIGIT:
@@ -217,12 +226,17 @@ def _fuzzy_correct(code: str) -> str | None:
     if code in _CODE_SET:
         return code
 
-    # Character confusions in the country-code prefix
+    # Character confusions in the country-code prefix (maps to list of alternatives)
     PREFIX_CONFUSIONS = {
-        "0": "O", "O": "0",
-        "1": "I", "I": "1",
-        "5": "S", "S": "5",
-        "8": "B", "B": "8",
+        "0": ["O"],
+        "O": ["0", "Q"],  # O and Q look identical when Q's tail is hidden by the badge shape
+        "Q": ["O"],
+        "1": ["I"],
+        "I": ["1"],
+        "5": ["S"],
+        "S": ["5"],
+        "8": ["B"],
+        "B": ["8"],
     }
     # Visually similar digits that Tesseract/Claude confuse in the number field
     NUM_ALTERNATIVES = {
@@ -261,8 +275,8 @@ def _fuzzy_correct(code: str) -> str | None:
 
     # 1. Correct prefix only
     for i, ch in enumerate(prefix):
-        if ch in PREFIX_CONFUSIONS:
-            alt_prefix = prefix[:i] + PREFIX_CONFUSIONS[ch] + prefix[i+1:]
+        for alt_ch in PREFIX_CONFUSIONS.get(ch, []):
+            alt_prefix = prefix[:i] + alt_ch + prefix[i+1:]
             result = _try(alt_prefix, num)
             if result:
                 return result
@@ -277,8 +291,8 @@ def _fuzzy_correct(code: str) -> str | None:
 
     # 3. Correct both prefix and number (covers double-error cases like RAS 2 → RSA 6)
     for i, ch in enumerate(prefix):
-        if ch in PREFIX_CONFUSIONS:
-            alt_prefix = prefix[:i] + PREFIX_CONFUSIONS[ch] + prefix[i+1:]
+        for alt_ch in PREFIX_CONFUSIONS.get(ch, []):
+            alt_prefix = prefix[:i] + alt_ch + prefix[i+1:]
             for j, dch in enumerate(num):
                 for alt_digit in NUM_ALTERNATIVES.get(dch, []):
                     alt_num = num[:j] + alt_digit + num[j+1:]
