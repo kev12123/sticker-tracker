@@ -7,6 +7,7 @@ import FriendsList from '../components/FriendsList'
 import SwapRequests from '../components/SwapRequests'
 import StickerScanner from '../components/StickerScanner'
 import WantedList from '../components/WantedList'
+import SettingsModal from '../components/SettingsModal'
 
 const TABS = [
   { id: 'stickers', icon: '🎴', label: 'Dupes' },
@@ -32,6 +33,7 @@ export default function ProfilePage() {
   const { user, logout } = useAuth()
   const [tab, setTab] = useState('stickers')
   const [scanOpen, setScanOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [listRefresh, setListRefresh] = useState(0)
 
   return (
@@ -44,10 +46,13 @@ export default function ProfilePage() {
             <span>Sticker Trader</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
               <Avatar username={user.username} size="sm" />
               <span className="text-white font-medium text-sm hidden xs:block">{user.username}</span>
-            </div>
+            </button>
             <button onClick={logout} className="text-indigo-300 hover:text-white text-sm transition-colors font-medium">
               Log out
             </button>
@@ -140,6 +145,18 @@ export default function ProfilePage() {
           <MobileNavItem tab={TABS[3]} active={tab} onClick={setTab} />
         </div>
       </nav>
+
+      {/* Settings modal */}
+      {settingsOpen && (
+        <SettingsModal
+          user={user}
+          onClose={() => setSettingsOpen(false)}
+          onCleared={() => {
+            setListRefresh(k => k + 1)
+            setSettingsOpen(false)
+          }}
+        />
+      )}
 
       {/* Scanner modal */}
       {scanOpen && (

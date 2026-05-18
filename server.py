@@ -287,6 +287,12 @@ def update_qty(entry_id: int, body: UpdateQtyBody, me=Depends(get_current_user))
     return {"ok": True}
 
 
+@app.delete("/api/stickers/list", status_code=204)
+def clear_my_list(me=Depends(get_current_user)):
+    with get_db() as db:
+        db.execute("DELETE FROM user_stickers WHERE user_id = %s", (me["id"],))
+
+
 @app.delete("/api/stickers/list/{entry_id}", status_code=204)
 def remove_from_list(entry_id: int, me=Depends(get_current_user)):
     with get_db() as db:
