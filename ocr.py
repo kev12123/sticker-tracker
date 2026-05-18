@@ -87,9 +87,12 @@ def _ocr_claude(image: Image.Image) -> list[str]:
                     "text": (
                         "This is the back of a Panini FIFA World Cup 2026 sticker. "
                         "There is a dark rounded badge in the top-right corner containing "
-                        "the sticker code (country letters + number, e.g. 'ARG 17' or 'RSA 6'). "
+                        "the sticker code: 2-3 capital letters (country code) then a space then 1-2 digits (1-20), "
+                        "e.g. 'ARG 17', 'RSA 6', 'CZE 6', 'FWC 1'. "
+                        "Important: in the dark badge, the digit 6 can look like G, 0 like O, 1 like I, 8 like B. "
+                        "Always output a digit for the number part — never a letter. "
                         "Reply with ONLY the sticker code, nothing else. "
-                        "If you cannot read it clearly, reply with UNKNOWN."
+                        "If you genuinely cannot read it, reply with UNKNOWN."
                     ),
                 },
             ],
@@ -214,23 +217,74 @@ def _fuzzy_correct(code: str) -> str | None:
     if code in _CODE_SET:
         return code
 
-    CONFUSIONS = {
+    # Character confusions in the country-code prefix
+    PREFIX_CONFUSIONS = {
         "0": "O", "O": "0",
         "1": "I", "I": "1",
         "5": "S", "S": "5",
         "8": "B", "B": "8",
     }
+    # Visually similar digits that Tesseract/Claude confuse in the number field
+    NUM_ALTERNATIVES = {
+        "2": ["6", "7"],
+        "6": ["2", "8"],
+        "0": ["8", "6"],
+        "8": ["0", "6"],
+        "1": ["7"],
+        "7": ["1"],
+        "9": ["4"],
+        "4": ["9"],
+    }
+
     parts = code.split(" ", 1)
     if len(parts) != 2:
         return None
     prefix, num = parts
 
+    # Strip accidental leading zero (e.g. Claude returns "RSA 06" for "RSA 6")
+    stripped_num = num.lstrip("0") or "0"
+    if stripped_num != num:
+        alt = f"{prefix} {stripped_num}"
+        if alt in _CODE_SET:
+            return alt
+
+    def _try(p, n):
+        alt = f"{p} {n}"
+        if alt in _CODE_SET:
+            return alt
+        stripped = n.lstrip("0") or "0"
+        if stripped != n:
+            alt2 = f"{p} {stripped}"
+            if alt2 in _CODE_SET:
+                return alt2
+        return None
+
+    # 1. Correct prefix only
     for i, ch in enumerate(prefix):
-        if ch in CONFUSIONS:
-            alt_prefix = prefix[:i] + CONFUSIONS[ch] + prefix[i+1:]
-            alt_code = f"{alt_prefix} {num}"
-            if alt_code in _CODE_SET:
-                return alt_code
+        if ch in PREFIX_CONFUSIONS:
+            alt_prefix = prefix[:i] + PREFIX_CONFUSIONS[ch] + prefix[i+1:]
+            result = _try(alt_prefix, num)
+            if result:
+                return result
+
+    # 2. Correct number only
+    for i, ch in enumerate(num):
+        for alt_digit in NUM_ALTERNATIVES.get(ch, []):
+            alt_num = num[:i] + alt_digit + num[i+1:]
+            result = _try(prefix, alt_num)
+            if result:
+                return result
+
+    # 3. Correct both prefix and number (covers double-error cases like RAS 2 → RSA 6)
+    for i, ch in enumerate(prefix):
+        if ch in PREFIX_CONFUSIONS:
+            alt_prefix = prefix[:i] + PREFIX_CONFUSIONS[ch] + prefix[i+1:]
+            for j, dch in enumerate(num):
+                for alt_digit in NUM_ALTERNATIVES.get(dch, []):
+                    alt_num = num[:j] + alt_digit + num[j+1:]
+                    result = _try(alt_prefix, alt_num)
+                    if result:
+                        return result
 
     if prefix in {"FWC", "FW", "WC"}:
         alt = f"FWC {num}"
@@ -271,6 +325,7 @@ def scan_image(image_bytes: bytes) -> dict:
 
     if not detected:
         # Fallback: Tesseract with badge crop
+        print("[SCAN] path=tesseract (Claude unavailable or returned UNKNOWN)")
         badge_raw = _ocr_badge_tesseract(image)
         badge_candidates = _parse_candidates(badge_raw)
         full_raw = _ocr_full_tesseract(image)
