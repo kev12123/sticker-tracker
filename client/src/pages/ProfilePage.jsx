@@ -3,18 +3,24 @@ import { useAuth } from '../context/AuthContext'
 import { Avatar } from '../utils/avatar'
 import { Logo } from '../components/Logo'
 import StickerList from '../components/StickerList'
+import DuplicatesList from '../components/DuplicatesList'
 import FriendsList from '../components/FriendsList'
 import SwapRequests from '../components/SwapRequests'
 import StickerScanner from '../components/StickerScanner'
 import WantedList from '../components/WantedList'
+import WantedQuickList from '../components/WantedQuickList'
 import SettingsModal from '../components/SettingsModal'
 
 const TABS = [
   { id: 'stickers', icon: '🎴', label: 'Dupes' },
+  { id: 'give',     icon: '🤝', label: 'Give' },
   { id: 'wanted',   icon: '🎯', label: 'Wanted' },
+  { id: 'got',      icon: '✅', label: 'Got' },
   { id: 'friends',  icon: '👥', label: 'Friends' },
   { id: 'swaps',    icon: '🔄', label: 'Trades' },
 ]
+
+const SCAN_TABS = ['stickers', 'give', 'wanted', 'got']
 
 function MobileNavItem({ tab, active, onClick }) {
   const isActive = active === tab.id
@@ -23,8 +29,8 @@ function MobileNavItem({ tab, active, onClick }) {
       onClick={() => onClick(tab.id)}
       className={`flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
     >
-      <span className="text-xl leading-none">{tab.icon}</span>
-      <span className="text-[10px] font-semibold tracking-wide">{tab.label}</span>
+      <span className="text-lg leading-none">{tab.icon}</span>
+      <span className="text-[9px] font-semibold tracking-wide">{tab.label}</span>
     </button>
   )
 }
@@ -35,6 +41,13 @@ export default function ProfilePage() {
   const [scanOpen, setScanOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [listRefresh, setListRefresh] = useState(0)
+  const [wantedRefresh, setWantedRefresh] = useState(0)
+
+  function handleTabChange(newTab) {
+    if (tab === 'give') setTimeout(() => setListRefresh(k => k + 1), 400)
+    if (tab === 'got') setTimeout(() => setWantedRefresh(k => k + 1), 400)
+    setTab(newTab)
+  }
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -75,14 +88,14 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Desktop tabs — hidden on mobile */}
+      {/* Desktop tabs */}
       <div className="max-w-5xl mx-auto px-2 sm:px-4 hidden sm:block">
         <div className="flex border-b border-gray-200 bg-white rounded-t-xl mt-4 shadow-sm">
           {TABS.map(t => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-6 py-4 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+              onClick={() => handleTabChange(t.id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-4 text-sm font-semibold transition-colors border-b-2 -mb-px ${
                 tab === t.id
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-400 hover:text-gray-700'
@@ -95,54 +108,56 @@ export default function ProfilePage() {
         </div>
         <div className="bg-white shadow-sm rounded-b-xl min-h-96">
           {tab === 'stickers' && <StickerList refreshToken={listRefresh} />}
-          {tab === 'wanted'   && <WantedList />}
+          {tab === 'give'     && <DuplicatesList onLeave={() => setListRefresh(k => k + 1)} />}
+          {tab === 'wanted'   && <WantedList key={wantedRefresh} />}
+          {tab === 'got'      && <WantedQuickList onLeave={() => setWantedRefresh(k => k + 1)} />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
         </div>
         <div className="h-8" />
       </div>
 
-      {/* Mobile content — shown without top tabs */}
+      {/* Mobile content */}
       <div className="sm:hidden max-w-5xl mx-auto px-0">
         <div className="bg-white shadow-sm min-h-96">
           {tab === 'stickers' && <StickerList refreshToken={listRefresh} />}
-          {tab === 'wanted'   && <WantedList />}
+          {tab === 'give'     && <DuplicatesList onLeave={() => setListRefresh(k => k + 1)} />}
+          {tab === 'wanted'   && <WantedList key={wantedRefresh} />}
+          {tab === 'got'      && <WantedQuickList onLeave={() => setWantedRefresh(k => k + 1)} />}
           {tab === 'friends'  && <FriendsList />}
           {tab === 'swaps'    && <SwapRequests />}
         </div>
         <div className="h-24" />
       </div>
 
-      {/* Desktop floating scan button — shown on Dupes and Wanted tabs */}
+      {/* Scan FAB — desktop */}
       <button
         onClick={() => setScanOpen(true)}
         style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
-        className={`fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40 ${(tab === 'stickers' || tab === 'wanted') ? 'hidden sm:flex' : 'hidden'}`}
+        className={`fixed right-5 w-16 h-16 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-2xl transition-all active:scale-95 z-40 ${SCAN_TABS.includes(tab) ? 'hidden sm:flex' : 'hidden'}`}
         title="Scan a sticker"
       >
         📷
       </button>
 
-      {/* Mobile bottom nav with scan button in center */}
+      {/* Scan FAB — mobile (above bottom nav) */}
+      <button
+        onClick={() => setScanOpen(true)}
+        style={{ bottom: 'calc(3.75rem + env(safe-area-inset-bottom, 0px))' }}
+        className={`sm:hidden fixed right-4 w-13 h-13 w-12 h-12 items-center justify-center bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-2xl text-xl transition-all active:scale-95 z-40 ${SCAN_TABS.includes(tab) ? 'flex' : 'hidden'}`}
+      >
+        📷
+      </button>
+
+      {/* Mobile bottom nav */}
       <nav
         className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 shadow-2xl z-40"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex items-end">
-          <MobileNavItem tab={TABS[0]} active={tab} onClick={setTab} />
-          <MobileNavItem tab={TABS[1]} active={tab} onClick={setTab} />
-          {/* Scan button */}
-          <button
-            onClick={() => (tab === 'stickers' || tab === 'wanted') && setScanOpen(true)}
-            className="flex-1 flex flex-col items-center pb-2 -mt-1"
-          >
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl shadow-lg ring-4 ring-white -mt-5 transition-all active:scale-95 ${(tab === 'stickers' || tab === 'wanted') ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800' : 'bg-gray-300'}`}>
-              📷
-            </div>
-            <span className="text-[10px] font-semibold text-gray-400 mt-1">Scan</span>
-          </button>
-          <MobileNavItem tab={TABS[2]} active={tab} onClick={setTab} />
-          <MobileNavItem tab={TABS[3]} active={tab} onClick={setTab} />
+          {TABS.map(t => (
+            <MobileNavItem key={t.id} tab={t} active={tab} onClick={handleTabChange} />
+          ))}
         </div>
       </nav>
 
@@ -168,7 +183,7 @@ export default function ProfilePage() {
                style={{ maxHeight: 'calc(95vh - env(safe-area-inset-top, 0px))' }}>
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
               <h3 className="font-bold text-gray-800 text-lg">
-                {tab === 'wanted' ? 'Scan to Wanted List' : 'Scan Sticker'}
+                {tab === 'wanted' || tab === 'got' ? 'Scan to Wanted List' : 'Scan Sticker'}
               </h3>
               <button
                 onClick={() => setScanOpen(false)}
@@ -177,7 +192,7 @@ export default function ProfilePage() {
             </div>
             <div className="overflow-y-auto flex-1 p-2">
               <StickerScanner
-                mode={tab === 'wanted' ? 'wanted' : 'duplicates'}
+                mode={tab === 'wanted' || tab === 'got' ? 'wanted' : 'duplicates'}
                 onAdded={() => setListRefresh(k => k + 1)}
               />
             </div>
