@@ -215,13 +215,28 @@ def _sticker_entry(row):
         },
     }
 
-LIST_QUERY = """
+_ALBUM_ORDER = """CASE SPLIT_PART(s.sticker_code, ' ', 1)
+  WHEN 'FWC' THEN 0  WHEN 'MEX' THEN 1  WHEN 'RSA' THEN 2  WHEN 'KOR' THEN 3
+  WHEN 'CZE' THEN 4  WHEN 'CAN' THEN 5  WHEN 'BIH' THEN 6  WHEN 'QAT' THEN 7
+  WHEN 'SUI' THEN 8  WHEN 'BRA' THEN 9  WHEN 'MAR' THEN 10 WHEN 'HAI' THEN 11
+  WHEN 'SCO' THEN 12 WHEN 'USA' THEN 13 WHEN 'PAR' THEN 14 WHEN 'AUS' THEN 15
+  WHEN 'TUR' THEN 16 WHEN 'GER' THEN 17 WHEN 'CUW' THEN 18 WHEN 'CIV' THEN 19
+  WHEN 'ECU' THEN 20 WHEN 'NED' THEN 21 WHEN 'JPN' THEN 22 WHEN 'SWE' THEN 23
+  WHEN 'TUN' THEN 24 WHEN 'BEL' THEN 25 WHEN 'EGY' THEN 26 WHEN 'IRN' THEN 27
+  WHEN 'NZL' THEN 28 WHEN 'ESP' THEN 29 WHEN 'CPV' THEN 30 WHEN 'KSA' THEN 31
+  WHEN 'URU' THEN 32 WHEN 'FRA' THEN 33 WHEN 'SEN' THEN 34 WHEN 'IRQ' THEN 35
+  WHEN 'NOR' THEN 36 WHEN 'ARG' THEN 37 WHEN 'ALG' THEN 38 WHEN 'AUT' THEN 39
+  WHEN 'JOR' THEN 40 WHEN 'POR' THEN 41 WHEN 'COD' THEN 42 WHEN 'UZB' THEN 43
+  WHEN 'COL' THEN 44 WHEN 'ENG' THEN 45 WHEN 'CRO' THEN 46 WHEN 'GHA' THEN 47
+  WHEN 'PAN' THEN 48 ELSE 99 END"""
+
+LIST_QUERY = f"""
     SELECT us.id, us.quantity, us.sticker_id,
            s.sticker_code, s.team_name, s.player_name, s.sticker_type, s.club
     FROM user_stickers us
     JOIN stickers s ON s.id = us.sticker_id
     WHERE us.user_id = %s
-    ORDER BY s.id
+    ORDER BY {_ALBUM_ORDER}, s.sticker_num
 """
 
 LIST_BY_ID_QUERY = """
@@ -399,13 +414,13 @@ def respond_friend_request(friendship_id: int, body: RespondFriendBody, me=Depen
 
 # ── Wanted / Wishlist ─────────────────────────────────────────────────────────
 
-WANTED_QUERY = """
+WANTED_QUERY = f"""
     SELECT uw.id, s.id as sticker_id, s.sticker_code, s.team_name,
            s.player_name, s.sticker_type, s.club
     FROM user_wanted_stickers uw
     JOIN stickers s ON s.id = uw.sticker_id
     WHERE uw.user_id = %s
-    ORDER BY s.id
+    ORDER BY {_ALBUM_ORDER}, s.sticker_num
 """
 
 WANTED_BY_ID_QUERY = """
