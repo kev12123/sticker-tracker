@@ -221,7 +221,7 @@ LIST_QUERY = """
     FROM user_stickers us
     JOIN stickers s ON s.id = us.sticker_id
     WHERE us.user_id = %s
-    ORDER BY s.team_name, s.sticker_num
+    ORDER BY s.id
 """
 
 LIST_BY_ID_QUERY = """
@@ -405,7 +405,7 @@ WANTED_QUERY = """
     FROM user_wanted_stickers uw
     JOIN stickers s ON s.id = uw.sticker_id
     WHERE uw.user_id = %s
-    ORDER BY s.team_name, s.sticker_num
+    ORDER BY s.id
 """
 
 WANTED_BY_ID_QUERY = """
